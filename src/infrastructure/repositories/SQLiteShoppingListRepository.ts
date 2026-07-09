@@ -2,6 +2,7 @@ import { ShoppingList } from '../../domain/entities/ShoppingList';
 import { ShoppingListItem } from '../../domain/entities/ShoppingListItem';
 import { ShoppingListRepository } from '../../domain/repositories/ShoppingListRepository';
 import { createId } from '../../shared/utils/createId';
+import { resolveShoppingListName } from '../../domain/constants/shoppingListDefaults';
 import { getDatabase } from '../database/database';
 import {
   ShoppingListItemRow,
@@ -78,7 +79,7 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
     const list: ShoppingList = {
       id: createId(),
       marketId,
-      name: name.trim(),
+      name: resolveShoppingListName(name),
       status: 'active',
       items: [],
       createdAt: now,
@@ -187,7 +188,7 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
       throw new Error('Lista de origem não encontrada.');
     }
 
-    const newList = await this.createActive(sourceList.marketId, name.trim());
+    const newList = await this.createActive(sourceList.marketId, resolveShoppingListName(name));
     const now = new Date().toISOString();
 
     for (const item of sourceList.items) {
@@ -354,7 +355,7 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
   private normalizeList(list: ShoppingList): ShoppingList {
     return {
       ...list,
-      name: list.name?.trim() || 'Lista de compras',
+      name: resolveShoppingListName(list.name),
       status: list.status ?? 'active',
       items: Array.isArray(list.items) ? list.items : [],
     };

@@ -3,6 +3,7 @@ import { ShoppingList } from '../../domain/entities/ShoppingList';
 import { ShoppingListItem } from '../../domain/entities/ShoppingListItem';
 import { ShoppingListRepository } from '../../domain/repositories/ShoppingListRepository';
 import { createId } from '../../shared/utils/createId';
+import { resolveShoppingListName } from '../../domain/constants/shoppingListDefaults';
 
 const shoppingListsStorageKey = '@lista-mercado-facil:shopping-lists';
 const activeShoppingListIdStorageKey = '@lista-mercado-facil:active-shopping-list-id';
@@ -43,7 +44,7 @@ export class WebShoppingListRepository implements ShoppingListRepository {
     const list: ShoppingList = {
       id: createId(),
       marketId,
-      name: name.trim(),
+      name: resolveShoppingListName(name),
       status: 'active',
       items: [],
       createdAt: now,
@@ -132,7 +133,7 @@ export class WebShoppingListRepository implements ShoppingListRepository {
     const reusedList: ShoppingList = {
       id: listId,
       marketId: sourceList.marketId,
-      name: name.trim(),
+      name: resolveShoppingListName(name),
       status: 'active',
       items: sourceList.items.map((item) => ({
         ...item,
@@ -294,7 +295,7 @@ export class WebShoppingListRepository implements ShoppingListRepository {
   private normalizeList(list: ShoppingList): ShoppingList {
     return {
       ...list,
-      name: list.name?.trim() || 'Lista de compras',
+      name: resolveShoppingListName(list.name),
       status: list.status ?? 'active',
       items: Array.isArray(list.items)
         ? list.items.map((item) => ({

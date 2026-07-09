@@ -16,6 +16,7 @@ import { ProductCategorizer } from "../../domain/services/ProductCategorizer";
 import { isProductAlreadyInList } from "../../domain/services/ShoppingListDuplicateGuard";
 import { ShoppingList } from "../../domain/entities/ShoppingList";
 import { ShoppingListItem, ShoppingListItemUnit } from "../../domain/entities/ShoppingListItem";
+import { defaultShoppingListName, resolveShoppingListName } from "../../domain/constants/shoppingListDefaults";
 import { Market } from "../../domain/entities/Market";
 import { defaultCategories } from "../../infrastructure/seed/defaultCategories";
 import { createMarketRepository } from "../../infrastructure/repositories/MarketRepositoryFactory";
@@ -60,11 +61,14 @@ export function ShoppingListScreen() {
     useState(false);
   const [isCreateListModalVisible, setIsCreateListModalVisible] =
     useState(false);
+  const [isEditListNameModalVisible, setIsEditListNameModalVisible] =
+    useState(false);
   const [isSelectListModalVisible, setIsSelectListModalVisible] =
     useState(false);
   const [availableLists, setAvailableLists] = useState<ShoppingList[]>([]);
   const [newListName, setNewListName] = useState("");
   const [newListError, setNewListError] = useState<string | null>(null);
+  const [editListName, setEditListName] = useState("");
   const [itemPendingRemoval, setItemPendingRemoval] =
     useState<ShoppingListItem | null>(null);
   const [itemPendingSectionChange, setItemPendingSectionChange] =
@@ -131,7 +135,7 @@ export function ShoppingListScreen() {
             persistedList ??
             (await shoppingListRepository.createActive(
               selectedMarket.id,
-              "Compras da semana",
+              defaultShoppingListName,
             ));
 
           if (list.marketId !== selectedMarket.id) {
@@ -509,12 +513,7 @@ export function ShoppingListScreen() {
       return;
     }
 
-    const trimmedName = newListName.trim();
-
-    if (!trimmedName) {
-      setNewListError("Informe um nome para a lista.");
-      return;
-    }
+    const resolvedName = resolveShoppingListName(newListName);
 
     setIsSaving(true);
     setNewListError(null);
@@ -523,7 +522,7 @@ export function ShoppingListScreen() {
       const shoppingListRepository = await createShoppingListRepository();
       const newList = await shoppingListRepository.createActive(
         market.id,
-        trimmedName,
+        resolvedName,
       );
       dispatch(setActiveList(newList));
       setAvailableLists((currentLists) => [
@@ -534,6 +533,62 @@ export function ShoppingListScreen() {
       setNewListName("");
     } catch {
       setNewListError("Não foi possível criar a lista. Tente novamente.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function handleRequestEditListName() {
+    if (!activeList || isSaving) {
+      return;
+    }
+
+    setEditListName(activeList.name);
+    setIsEditListNameModalVisible(true);
+  }
+
+  function handleCancelEditListName() {
+    if (isSaving) {
+      return;
+    }
+
+    setIsEditListNameModalVisible(false);
+    setEditListName("");
+  }
+
+  async function handleConfirmEditListName() {
+    if (!activeList || isSaving) {
+      return;
+    }
+
+    const resolvedName = resolveShoppingListName(editListName);
+
+    if (resolvedName === activeList.name) {
+      setIsEditListNameModalVisible(false);
+      setEditListName("");
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const now = new Date().toISOString();
+      const shoppingListRepository = await createShoppingListRepository();
+      const updatedList: ShoppingList = {
+        ...activeList,
+        name: resolvedName,
+        updatedAt: now,
+      };
+
+      await shoppingListRepository.update(updatedList);
+      dispatch(setActiveList(updatedList));
+      setAvailableLists((currentLists) =>
+        currentLists.map((list) =>
+          list.id === updatedList.id ? updatedList : list,
+        ),
+      );
+      setIsEditListNameModalVisible(false);
+      setEditListName("");
     } finally {
       setIsSaving(false);
     }
@@ -567,7 +622,7 @@ export function ShoppingListScreen() {
       await shoppingListRepository.completeList(activeList.id);
       const newList = await shoppingListRepository.createActive(
         market.id,
-        "Nova compra",
+        defaultShoppingListName,
       );
       dispatch(setActiveList(newList));
       setAvailableLists((currentLists) => [
@@ -673,6 +728,18 @@ export function ShoppingListScreen() {
             >
               <AppText variant="caption" style={styles.listActionButtonText}>
                 Nova
+              </AppText>
+            </Pressable>
+
+            <Pressable
+              onPress={handleRequestEditListName}
+              style={({ pressed }) => [
+                styles.listActionButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.listActionButtonText}>
+                Nome
               </AppText>
             </Pressable>
 
@@ -858,6 +925,15 @@ export function ShoppingListScreen() {
         }}
         onCancel={handleCancelCreateList}
         onConfirm={handleConfirmCreateList}
+      />
+
+      <EditShoppingListNameModal
+        visible={isEditListNameModalVisible}
+        value={editListName}
+        isSaving={isSaving}
+        onChangeValue={setEditListName}
+        onCancel={handleCancelEditListName}
+        onConfirm={handleConfirmEditListName}
       />
 
       <ConfirmCompleteListModal
@@ -1065,14 +1141,14 @@ function CreateShoppingListModal({
             Nova lista
           </AppText>
           <AppText muted style={styles.modalDescription}>
-            Crie uma lista separada para uma compra específica. Ela usará o
-            supermercado selecionado no momento.
+            Crie uma lista separada para uma compra específica. Se não informar
+            um nome, usaremos "Compra do dia".
           </AppText>
 
           <TextInput
             value={value}
             onChangeText={onChangeValue}
-            placeholder="Ex.: Compras da semana"
+            placeholder="Ex.: Compra do dia"
             placeholderTextColor={theme.colors.textSubtle}
             style={[styles.input, styles.modalInput]}
             returnKeyType="done"
@@ -1112,6 +1188,89 @@ function CreateShoppingListModal({
             >
               <AppText variant="caption" style={styles.modalPrimaryText}>
                 Criar lista
+              </AppText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+interface EditShoppingListNameModalProps {
+  visible: boolean;
+  value: string;
+  isSaving: boolean;
+  onChangeValue: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function EditShoppingListNameModal({
+  visible,
+  value,
+  isSaving,
+  onChangeValue,
+  onCancel,
+  onConfirm,
+}: EditShoppingListNameModalProps) {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  return (
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={onCancel}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <AppText variant="subtitle" style={styles.modalTitle}>
+            Editar nome da lista
+          </AppText>
+          <AppText muted style={styles.modalDescription}>
+            Altere o nome para identificar melhor esta compra. Se salvar vazio,
+            usaremos "Compra do dia".
+          </AppText>
+
+          <TextInput
+            value={value}
+            onChangeText={onChangeValue}
+            placeholder="Compra do dia"
+            placeholderTextColor={theme.colors.textSubtle}
+            style={[styles.input, styles.modalInput]}
+            returnKeyType="done"
+            onSubmitEditing={onConfirm}
+            autoCorrect={false}
+          />
+
+          <View style={styles.modalActions}>
+            <Pressable
+              onPress={onCancel}
+              style={({ pressed }) => [
+                styles.modalButton,
+                styles.modalCancelButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.modalCancelText}>
+                Cancelar
+              </AppText>
+            </Pressable>
+
+            <Pressable
+              disabled={isSaving}
+              onPress={onConfirm}
+              style={({ pressed }) => [
+                styles.modalButton,
+                styles.modalPrimaryButton,
+                isSaving ? styles.disabledActionButton : null,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.modalPrimaryText}>
+                Salvar
               </AppText>
             </Pressable>
           </View>

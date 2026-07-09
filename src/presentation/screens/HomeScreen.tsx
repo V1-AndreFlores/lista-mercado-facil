@@ -7,6 +7,7 @@ import { useAppDispatch } from '../../app/store/hooks';
 import { setSelectedMarketId } from '../../app/store/slices/marketSlice';
 import { setActiveList } from '../../app/store/slices/shoppingListSlice';
 import { ShoppingList } from '../../domain/entities/ShoppingList';
+import { defaultShoppingListName } from '../../domain/constants/shoppingListDefaults';
 import { createMarketRepository } from '../../infrastructure/repositories/MarketRepositoryFactory';
 import { createShoppingListRepository } from '../../infrastructure/repositories/ShoppingListRepositoryFactory';
 import { AppActionCard } from '../components/AppActionCard';
@@ -22,6 +23,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 export function HomeScreen({ navigation }: Props) {
   const dispatch = useAppDispatch();
   const [history, setHistory] = useState<ShoppingList[]>([]);
+  const [marketNamesById, setMarketNamesById] = useState<Record<string, string>>({});
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [reusingListId, setReusingListId] = useState<string | null>(null);
@@ -33,9 +35,22 @@ export function HomeScreen({ navigation }: Props) {
     setHistoryError(null);
 
     try {
-      const repository = await createShoppingListRepository();
-      const completedLists = await repository.getCompleted();
+      const [repository, marketRepository] = await Promise.all([
+        createShoppingListRepository(),
+        createMarketRepository(),
+      ]);
+      const [completedLists, markets] = await Promise.all([
+        repository.getCompleted(),
+        marketRepository.getAll(),
+      ]);
+
       setHistory(completedLists.slice(0, 3));
+      setMarketNamesById(
+        markets.reduce<Record<string, string>>((accumulator, market) => {
+          accumulator[market.id] = market.name;
+          return accumulator;
+        }, {}),
+      );
     } catch {
       setHistoryError('Não foi possível carregar o histórico.');
     } finally {
@@ -62,7 +77,7 @@ export function HomeScreen({ navigation }: Props) {
       const marketRepository = await createMarketRepository();
       const reusedList = await shoppingListRepository.reuseListAsActive(
         list.id,
-        `${list.name} - nova compra`,
+        defaultShoppingListName,
       );
 
       await marketRepository.setActiveMarketId(reusedList.marketId);
@@ -139,6 +154,7 @@ export function HomeScreen({ navigation }: Props) {
           <HistoryListCard
             key={list.id}
             list={list}
+            marketName={marketNamesById[list.marketId] ?? 'Mercado não informado'}
             isReusing={reusingListId === list.id}
             onReuse={() => handleReuseList(list)}
           />
@@ -150,14 +166,15 @@ export function HomeScreen({ navigation }: Props) {
 
 interface HistoryListCardProps {
   list: ShoppingList;
+  marketName: string;
   isReusing: boolean;
   onReuse: () => void;
 }
 
-function HistoryListCard({ list, isReusing, onReuse }: HistoryListCardProps) {
+function HistoryListCard({ list, marketName, isReusing, onReuse }: HistoryListCardProps) {
   const theme = useAppTheme();
   const styles = createStyles(theme);
-  const completedDate = formatDate(list.completedAt ?? list.updatedAt);
+  const completedDateTime = formatDateTime(list.completedAt ?? list.updatedAt);
 
   return (
     <AppCard elevated style={styles.historyCard}>
@@ -167,7 +184,10 @@ function HistoryListCard({ list, isReusing, onReuse }: HistoryListCardProps) {
             {list.name}
           </AppText>
           <AppText muted style={styles.historyListMeta}>
-            Concluída em {completedDate} · {list.items.length} item{list.items.length === 1 ? '' : 's'}
+            Concluída em {completedDateTime} · {list.items.length} item{list.items.length === 1 ? '' : 's'}
+          </AppText>
+          <AppText muted style={styles.historyListMeta}>
+            Mercado: {marketName}
           </AppText>
         </View>
 
@@ -189,18 +209,24 @@ function HistoryListCard({ list, isReusing, onReuse }: HistoryListCardProps) {
   );
 }
 
-function formatDate(value: string): string {
+function formatDateTime(value: string): string {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
     return 'data não informada';
   }
 
-  return new Intl.DateTimeFormat('pt-BR', {
+  const formattedDate = new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
   }).format(date);
+  const formattedTime = new Intl.DateTimeFormat('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+
+  return `${formattedDate} às ${formattedTime}`;
 }
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) {
