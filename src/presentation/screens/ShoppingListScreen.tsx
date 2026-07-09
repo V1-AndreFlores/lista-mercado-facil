@@ -35,6 +35,7 @@ export function ShoppingListScreen() {
   const [productName, setProductName] = useState('');
   const [productError, setProductError] = useState<string | null>(null);
   const [isClearConfirmationVisible, setIsClearConfirmationVisible] = useState(false);
+  const [itemPendingRemoval, setItemPendingRemoval] = useState<ShoppingListItem | null>(null);
   const theme = useAppTheme();
   const styles = createStyles(theme);
 
@@ -171,8 +172,24 @@ export function ShoppingListScreen() {
     }
   }
 
-  async function handleRemoveItem(itemId: string) {
+  function handleRequestRemoveItem(item: ShoppingListItem) {
     if (isSaving) {
+      return;
+    }
+
+    setItemPendingRemoval(item);
+  }
+
+  function handleCancelRemoveItem() {
+    if (isSaving) {
+      return;
+    }
+
+    setItemPendingRemoval(null);
+  }
+
+  async function handleConfirmRemoveItem() {
+    if (!itemPendingRemoval || isSaving) {
       return;
     }
 
@@ -180,8 +197,9 @@ export function ShoppingListScreen() {
 
     try {
       const shoppingListRepository = await createShoppingListRepository();
-      await shoppingListRepository.removeItem(itemId);
-      dispatch(removeShoppingListItem(itemId));
+      await shoppingListRepository.removeItem(itemPendingRemoval.id);
+      dispatch(removeShoppingListItem(itemPendingRemoval.id));
+      setItemPendingRemoval(null);
     } finally {
       setIsSaving(false);
     }
@@ -323,7 +341,7 @@ export function ShoppingListScreen() {
                       key={item.id}
                       item={item}
                       onToggle={() => handleToggleItem(item.id)}
-                      onRemove={() => handleRemoveItem(item.id)}
+                      onRemove={() => handleRequestRemoveItem(item)}
                     />
                   ))}
                 </View>
@@ -335,9 +353,16 @@ export function ShoppingListScreen() {
       </AppScreen>
 
       <ConfirmClearListModal
-      visible={isClearConfirmationVisible}
-      onCancel={handleCancelClearList}
-      onConfirm={handleConfirmClearList}
+        visible={isClearConfirmationVisible}
+        onCancel={handleCancelClearList}
+        onConfirm={handleConfirmClearList}
+      />
+
+      <ConfirmRemoveItemModal
+        visible={Boolean(itemPendingRemoval)}
+        itemName={itemPendingRemoval?.name ?? ''}
+        onCancel={handleCancelRemoveItem}
+        onConfirm={handleConfirmRemoveItem}
       />
     </>
   );
@@ -402,6 +427,41 @@ function ConfirmClearListModal({ visible, onCancel, onConfirm }: ConfirmClearLis
 
             <Pressable onPress={onConfirm} style={({ pressed }) => [styles.modalButton, styles.modalDangerButton, pressed ? styles.pressed : null]}>
               <AppText variant="caption" style={styles.modalDangerText}>Limpar lista</AppText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+interface ConfirmRemoveItemModalProps {
+  visible: boolean;
+  itemName: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function ConfirmRemoveItemModal({ visible, itemName, onCancel, onConfirm }: ConfirmRemoveItemModalProps) {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <AppText variant="subtitle" style={styles.modalTitle}>Remover produto?</AppText>
+          <AppText muted style={styles.modalDescription}>
+            Você está prestes a remover "{itemName}" da lista. Essa ação não poderá ser desfeita.
+          </AppText>
+
+          <View style={styles.modalActions}>
+            <Pressable onPress={onCancel} style={({ pressed }) => [styles.modalButton, styles.modalCancelButton, pressed ? styles.pressed : null]}>
+              <AppText variant="caption" style={styles.modalCancelText}>Cancelar</AppText>
+            </Pressable>
+
+            <Pressable onPress={onConfirm} style={({ pressed }) => [styles.modalButton, styles.modalDangerButton, pressed ? styles.pressed : null]}>
+              <AppText variant="caption" style={styles.modalDangerText}>Remover</AppText>
             </Pressable>
           </View>
         </View>
