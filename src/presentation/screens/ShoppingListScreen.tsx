@@ -1,14 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Keyboard, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { AddItemToShoppingListUseCase } from '../../domain/use-cases/AddItemToShoppingListUseCase';
 import { SortShoppingListByMarketRouteUseCase } from '../../domain/use-cases/SortShoppingListByMarketRouteUseCase';
 import { ProductCategorizer } from '../../domain/services/ProductCategorizer';
 import { ShoppingList } from '../../domain/entities/ShoppingList';
+import { ShoppingListItem } from '../../domain/entities/ShoppingListItem';
 import { Market } from '../../domain/entities/Market';
 import { defaultCategories } from '../../infrastructure/seed/defaultCategories';
-import { initializeDatabase } from '../../infrastructure/database/database';
-import { SQLiteMarketRepository } from '../../infrastructure/repositories/SQLiteMarketRepository';
+import { defaultMarkets } from '../../infrastructure/seed/defaultMarkets';
 import { createId } from '../../shared/utils/createId';
+import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
+import { setSelectedMarketId } from '../../app/store/slices/marketSlice';
+import {
+  addShoppingListItem,
+  clearActiveShoppingList,
+  removeShoppingListItem,
+  setActiveList,
+  toggleShoppingListItemPurchased,
+} from '../../app/store/slices/shoppingListSlice';
 import { AppButton } from '../components/AppButton';
 import { AppCard } from '../components/AppCard';
 import { AppGradientHeader } from '../components/AppGradientHeader';
@@ -17,49 +26,13 @@ import { AppText } from '../components/AppText';
 import { useAppTheme } from '../components/useAppTheme';
 
 export function ShoppingListScreen() {
-  const now = useMemo(() => new Date().toISOString(), []);
+  const dispatch = useAppDispatch();
+  const activeList = useAppSelector((state) => state.shoppingList.activeList);
   const [market, setMarket] = useState<Market | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [productName, setProductName] = useState('');
-  const [list, setList] = useState<ShoppingList | null>(null);
   const theme = useAppTheme();
   const styles = createStyles(theme);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadDefaultMarket() {
-      await initializeDatabase();
-      const repository = new SQLiteMarketRepository();
-      const markets = await repository.getAll();
-      const defaultMarket = markets.find((item) => item.isDefault) ?? markets[0] ?? null;
-
-      if (!isMounted) {
-        return;
-      }
-
-      setMarket(defaultMarket);
-      setList(
-        defaultMarket
-          ? {
-              id: createId(),
-              marketId: defaultMarket.id,
-              name: 'Compra da semana',
-              items: [],
-              createdAt: now,
-              updatedAt: now,
-            }
-          : null,
-      );
-      setIsLoading(false);
-    }
-
-    void loadDefaultMarket();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [now]);
 
   const addItemUseCase = useMemo(
     () => new AddItemToShoppingListUseCase(new ProductCategorizer(defaultCategories)),
@@ -67,20 +40,62 @@ export function ShoppingListScreen() {
   );
 
   const sortUseCase = useMemo(() => new SortShoppingListByMarketRouteUseCase(), []);
-  const sections = list && market ? sortUseCase.execute(list, market) : [];
+  const sections = activeList && market ? sortUseCase.execute(activeList, market) : [];
+  const totalItems = activeList?.items.length ?? 0;
+  const purchasedItems = activeList?.items.filter((item) => item.isPurchased).length ?? 0;
+  const pendingItems = totalItems - purchasedItems;
+
+  useEffect(() => {
+    const defaultMarket = defaultMarkets.find((item) => item.isDefault) ?? defaultMarkets[0] ?? null;
+
+    setMarket(defaultMarket);
+    dispatch(setSelectedMarketId(defaultMarket?.id ?? null));
+
+    if (defaultMarket && !activeList) {
+      const now = new Date().toISOString();
+      const list: ShoppingList = {
+        id: createId(),
+        marketId: defaultMarket.id,
+        name: 'Compra da semana',
+        items: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      dispatch(setActiveList(list));
+    }
+
+    setIsLoading(false);
+  }, [activeList, dispatch]);
 
   function handleAddItem() {
-    if (!productName.trim() || !list) {
+    const trimmedProductName = productName.trim();
+
+    if (!trimmedProductName || !activeList) {
       return;
     }
 
     const updatedList = addItemUseCase.execute({
-      list,
-      productName,
+      list: activeList,
+      productName: trimmedProductName,
     });
 
-    setList(updatedList);
+    const newItem = updatedList.items[updatedList.items.length - 1];
+    dispatch(addShoppingListItem(newItem));
     setProductName('');
+    Keyboard.dismiss();
+  }
+
+  function handleToggleItem(itemId: string) {
+    dispatch(toggleShoppingListItemPurchased(itemId));
+  }
+
+  function handleRemoveItem(itemId: string) {
+    dispatch(removeShoppingListItem(itemId));
+  }
+
+  function handleClearList() {
+    dispatch(clearActiveShoppingList());
   }
 
   if (isLoading) {
@@ -92,7 +107,7 @@ export function ShoppingListScreen() {
     );
   }
 
-  if (!market || !list) {
+  if (!market || !activeList) {
     return (
       <AppScreen contentStyle={styles.centeredContainer}>
         <AppText muted>Nenhum supermercado cadastrado.</AppText>
@@ -110,50 +125,150 @@ export function ShoppingListScreen() {
       />
 
       <View style={styles.content}>
+        <View style={styles.summaryRow}>
+          <SummaryPill label="Pendentes" value={pendingItems} />
+          <SummaryPill label="Comprados" value={purchasedItems} />
+          <SummaryPill label="Total" value={totalItems} />
+        </View>
+
         <AppCard elevated style={styles.formCard}>
-          <AppText variant="label" accent>Adicionar item</AppText>
-          <TextInput
-            value={productName}
-            onChangeText={setProductName}
-            placeholder="Ex.: arroz, banana, leite"
-            placeholderTextColor={theme.colors.textSubtle}
-            style={styles.input}
-            returnKeyType="done"
-            onSubmitEditing={handleAddItem}
-          />
-          <AppButton style={styles.addButton} onPress={handleAddItem}>
+          <View style={styles.formHeader}>
+            <View>
+              <AppText variant="label" accent>Adicionar produto</AppText>
+              <AppText muted style={styles.formSubtitle}>Digite um item por vez. O setor será identificado automaticamente.</AppText>
+            </View>
+          </View>
+
+          <View style={styles.inputRow}>
+            <TextInput
+              value={productName}
+              onChangeText={setProductName}
+              placeholder="Ex.: arroz, banana, leite"
+              placeholderTextColor={theme.colors.textSubtle}
+              style={styles.input}
+              returnKeyType="done"
+              onSubmitEditing={handleAddItem}
+              autoCorrect={false}
+            />
+          </View>
+
+          <AppButton style={styles.addButton} disabled={!productName.trim()} onPress={handleAddItem}>
             Adicionar à lista
           </AppButton>
         </AppCard>
 
         {sections.length === 0 ? (
-          <AppCard soft elevated>
-            <AppText variant="subtitle">Sua lista ainda está vazia</AppText>
-            <AppText muted style={styles.emptyText}>
-              Adicione itens para começar. A lista será agrupada por setores automaticamente.
-            </AppText>
-          </AppCard>
+          <EmptyShoppingList />
         ) : (
-          sections.map((section, index) => (
-            <AppCard key={section.sectionName} elevated style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <View style={styles.sectionNumber}>
-                  <AppText variant="caption" style={styles.sectionNumberText}>{index + 1}</AppText>
-                </View>
-                <AppText variant="subtitle" style={styles.sectionTitle}>{section.sectionName}</AppText>
+          <View style={styles.sectionsContainer}>
+            <View style={styles.listHeader}>
+              <View>
+                <AppText variant="label" accent>Rota de compra</AppText>
+                <AppText muted style={styles.listHint}>Itens comprados ficam no final de cada setor.</AppText>
               </View>
 
-              {section.items.map((item) => (
-                <View key={item.id} style={styles.itemRow}>
-                  <View style={styles.itemBullet} />
-                  <AppText style={styles.itemText}>{item.name}</AppText>
+              <Pressable onPress={handleClearList} style={({ pressed }) => [styles.clearButton, pressed ? styles.pressed : null]}>
+                <AppText variant="caption" style={styles.clearButtonText}>Limpar</AppText>
+              </Pressable>
+            </View>
+
+            {sections.map((section, index) => (
+              <AppCard key={section.sectionName} elevated style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <View style={styles.sectionOrder}>
+                    <AppText variant="caption" style={styles.sectionOrderText}>{index + 1}</AppText>
+                  </View>
+                  <View style={styles.sectionTextContainer}>
+                    <AppText variant="subtitle" style={styles.sectionTitle}>{section.sectionName}</AppText>
+                    <AppText subtle variant="caption">{section.items.length} item{section.items.length === 1 ? '' : 's'}</AppText>
+                  </View>
                 </View>
-              ))}
-            </AppCard>
-          ))
+
+                <View style={styles.itemsContainer}>
+                  {section.items.map((item) => (
+                    <ShoppingItemRow
+                      key={item.id}
+                      item={item}
+                      onToggle={() => handleToggleItem(item.id)}
+                      onRemove={() => handleRemoveItem(item.id)}
+                    />
+                  ))}
+                </View>
+              </AppCard>
+            ))}
+          </View>
         )}
       </View>
     </AppScreen>
+  );
+}
+
+interface SummaryPillProps {
+  label: string;
+  value: number;
+}
+
+function SummaryPill({ label, value }: SummaryPillProps) {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  return (
+    <View style={styles.summaryPill}>
+      <AppText variant="headline" style={styles.summaryValue}>{value}</AppText>
+      <AppText subtle variant="caption" style={styles.summaryLabel}>{label}</AppText>
+    </View>
+  );
+}
+
+function EmptyShoppingList() {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  return (
+    <AppCard elevated style={styles.emptyCard}>
+      <View style={styles.emptyAccent} />
+      <AppText variant="subtitle">Sua lista ainda está vazia</AppText>
+      <AppText muted style={styles.emptyText}>
+        Adicione produtos para montar a primeira rota de compra. Itens como banana, arroz, leite e detergente já serão agrupados por setor.
+      </AppText>
+    </AppCard>
+  );
+}
+
+interface ShoppingItemRowProps {
+  item: ShoppingListItem;
+  onToggle: () => void;
+  onRemove: () => void;
+}
+
+function ShoppingItemRow({ item, onToggle, onRemove }: ShoppingItemRowProps) {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  return (
+    <View style={[styles.itemRow, item.isPurchased ? styles.itemRowPurchased : null]}>
+      <Pressable
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: item.isPurchased }}
+        onPress={onToggle}
+        style={({ pressed }) => [styles.checkArea, pressed ? styles.pressed : null]}
+      >
+        <View style={[styles.checkbox, item.isPurchased ? styles.checkboxChecked : null]}>
+          {item.isPurchased ? <View style={styles.checkboxInner} /> : null}
+        </View>
+      </Pressable>
+
+      <Pressable onPress={onToggle} style={({ pressed }) => [styles.itemTextArea, pressed ? styles.pressed : null]}>
+        <AppText style={[styles.itemName, item.isPurchased ? styles.itemNamePurchased : null]}>
+          {item.name}
+        </AppText>
+        <AppText subtle variant="caption">{item.isPurchased ? 'Comprado' : 'Pendente'}</AppText>
+      </Pressable>
+
+      <Pressable onPress={onRemove} style={({ pressed }) => [styles.removeButton, pressed ? styles.pressed : null]}>
+        <AppText variant="caption" style={styles.removeButtonText}>Remover</AppText>
+      </Pressable>
+    </View>
   );
 }
 
@@ -168,21 +283,58 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       marginTop: theme.spacing.md,
     },
     content: {
-      padding: theme.spacing.lg,
+      padding: theme.spacing.xl,
       gap: theme.spacing.lg,
-      
+    },
+    summaryRow: {
+      flexDirection: 'row',
+      gap: theme.spacing.sm,
+    },
+    summaryPill: {
+      flex: 1,
+      minHeight: 74,
+      justifyContent: 'center',
+      backgroundColor: theme.colors.surfaceElevated,
+      borderRadius: theme.radius.lg,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: theme.spacing.sm,
+      shadowColor: theme.colors.shadow,
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: theme.mode === 'dark' ? 0.14 : 0.06,
+      shadowRadius: 14,
+      elevation: 2,
+    },
+    summaryValue: {
+      color: theme.colors.primary,
+      fontSize: 24,
+      lineHeight: 30,
+    },
+    summaryLabel: {
+      marginTop: 2,
+      fontWeight: '700',
     },
     formCard: {
       padding: theme.spacing.xl,
     },
+    formHeader: {
+      marginBottom: theme.spacing.md,
+    },
+    formSubtitle: {
+      marginTop: theme.spacing.xs,
+      fontSize: 13,
+      lineHeight: 19,
+    },
+    inputRow: {
+      gap: theme.spacing.sm,
+    },
     input: {
-      minHeight: 52,
+      minHeight: 54,
       borderWidth: 1,
       borderColor: theme.colors.border,
       borderRadius: theme.radius.lg,
       paddingHorizontal: theme.spacing.lg,
-      marginTop: theme.spacing.md,
       fontSize: 15,
+      fontWeight: '600',
       color: theme.colors.text,
       backgroundColor: theme.colors.inputBackground,
     },
@@ -190,49 +342,149 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       marginTop: theme.spacing.md,
       width: '100%',
     },
+    emptyCard: {
+      position: 'relative',
+      overflow: 'hidden',
+      padding: theme.spacing.xl,
+    },
+    emptyAccent: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: 4,
+      backgroundColor: theme.colors.accent,
+    },
     emptyText: {
       marginTop: theme.spacing.sm,
     },
+    sectionsContainer: {
+      gap: theme.spacing.lg,
+    },
+    listHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: theme.spacing.md,
+    },
+    listHint: {
+      marginTop: 2,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    clearButton: {
+      minHeight: 34,
+      justifyContent: 'center',
+      borderRadius: theme.radius.md,
+      paddingHorizontal: theme.spacing.md,
+      backgroundColor: theme.colors.surfaceElevated,
+    },
+    clearButtonText: {
+      color: theme.colors.primary,
+      fontWeight: '900',
+    },
     section: {
-      padding: theme.spacing.lg,
+      padding: 0,
+      overflow: 'hidden',
     },
     sectionHeader: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: theme.spacing.md,
-      marginBottom: theme.spacing.sm,
+      paddingHorizontal: theme.spacing.lg,
+      paddingTop: theme.spacing.lg,
+      paddingBottom: theme.spacing.md,
     },
-    sectionNumber: {
-      minWidth: 34,
-      height: 28,
+    sectionOrder: {
+      width: 36,
+      height: 36,
       borderRadius: theme.radius.md,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: theme.colors.primarySoft,
     },
-    sectionNumberText: {
+    sectionOrderText: {
       color: theme.colors.primaryStrong,
       fontWeight: '900',
     },
-    sectionTitle: {
+    sectionTextContainer: {
       flex: 1,
     },
-    itemRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingVertical: theme.spacing.sm,
+    sectionTitle: {
+      fontSize: 17,
+      lineHeight: 23,
+    },
+    itemsContainer: {
       borderTopWidth: 1,
       borderTopColor: theme.colors.border,
-      gap: theme.spacing.md,
     },
-    itemBullet: {
-      width: 4,
-      height: 24,
-      borderRadius: 4,
-      backgroundColor: theme.colors.accent,
+    itemRow: {
+      minHeight: 70,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+      paddingVertical: theme.spacing.sm,
+      paddingLeft: theme.spacing.md,
+      paddingRight: theme.spacing.sm,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+      backgroundColor: theme.colors.card,
     },
-    itemText: {
+    itemRowPurchased: {
+      backgroundColor: theme.colors.surfaceMuted,
+    },
+    checkArea: {
+      width: 40,
+      height: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    checkbox: {
+      width: 22,
+      height: 22,
+      borderRadius: 7,
+      borderWidth: 2,
+      borderColor: theme.colors.borderStrong,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'transparent',
+    },
+    checkboxChecked: {
+      borderColor: theme.colors.primary,
+      backgroundColor: theme.colors.primary,
+    },
+    checkboxInner: {
+      width: 8,
+      height: 8,
+      borderRadius: 8,
+      backgroundColor: theme.colors.primaryText,
+    },
+    itemTextArea: {
       flex: 1,
+      minHeight: 48,
+      justifyContent: 'center',
+    },
+    itemName: {
+      fontWeight: '800',
+      textTransform: 'capitalize',
+    },
+    itemNamePurchased: {
+      textDecorationLine: 'line-through',
+      color: theme.colors.textSubtle,
+    },
+    removeButton: {
+      minHeight: 36,
+      justifyContent: 'center',
+      borderRadius: theme.radius.md,
+      paddingHorizontal: theme.spacing.sm,
+      backgroundColor: theme.colors.backgroundAlt,
+    },
+    removeButtonText: {
+      color: theme.colors.textMuted,
+      fontWeight: '900',
+    },
+    pressed: {
+      opacity: 0.72,
     },
   });
 }

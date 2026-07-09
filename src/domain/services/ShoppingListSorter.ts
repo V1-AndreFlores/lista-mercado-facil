@@ -25,8 +25,14 @@ export class ShoppingListSorter {
       .map(([sectionName, sectionItems]) => ({
         sectionName,
         routeOrder: orderBySection.get(sectionName) ?? Number.MAX_SAFE_INTEGER,
-        items: sectionItems.sort((left, right) => left.name.localeCompare(right.name)),
+        items: [...sectionItems].sort((left, right) => {
+          if (left.isPurchased !== right.isPurchased) {
+            return left.isPurchased ? 1 : -1;
+          }
+
+          return left.name.localeCompare(right.name, 'pt-BR', { sensitivity: 'base' });
+        }),
       }))
-      .sort((left, right) => left.routeOrder - right.routeOrder);
+      .sort((left, right) => left.routeOrder - right.routeOrder || left.sectionName.localeCompare(right.sectionName, 'pt-BR'));
   }
 }
