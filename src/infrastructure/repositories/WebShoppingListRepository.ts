@@ -1,10 +1,11 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ShoppingList } from '../../domain/entities/ShoppingList';
-import { ShoppingListItem } from '../../domain/entities/ShoppingListItem';
-import { ShoppingListRepository } from '../../domain/repositories/ShoppingListRepository';
-import { createId } from '../../shared/utils/createId';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { ShoppingList } from "../../domain/entities/ShoppingList";
+import { ShoppingListItem } from "../../domain/entities/ShoppingListItem";
+import { ShoppingListRepository } from "../../domain/repositories/ShoppingListRepository";
+import { createId } from "../../shared/utils/createId";
 
-const activeShoppingListStorageKey = '@lista-mercado-facil:active-shopping-list';
+const activeShoppingListStorageKey =
+  "@lista-mercado-facil:active-shopping-list";
 
 export class WebShoppingListRepository implements ShoppingListRepository {
   async getActive(): Promise<ShoppingList | null> {
@@ -36,14 +37,17 @@ export class WebShoppingListRepository implements ShoppingListRepository {
   }
 
   async update(list: ShoppingList): Promise<void> {
-    await this.writeActiveList({ ...list, updatedAt: new Date().toISOString() });
+    await this.writeActiveList({
+      ...list,
+      updatedAt: new Date().toISOString(),
+    });
   }
 
   async addItem(item: ShoppingListItem): Promise<void> {
     const list = await this.readActiveList();
 
     if (!list) {
-      throw new Error('Lista ativa não encontrada.');
+      throw new Error("Lista ativa não encontrada.");
     }
 
     await this.writeActiveList({
@@ -53,7 +57,10 @@ export class WebShoppingListRepository implements ShoppingListRepository {
     });
   }
 
-  async updateItemPurchaseStatus(itemId: string, isPurchased: boolean): Promise<void> {
+  async updateItemPurchaseStatus(
+    itemId: string,
+    isPurchased: boolean,
+  ): Promise<void> {
     const list = await this.readActiveList();
 
     if (!list) {
@@ -63,11 +70,26 @@ export class WebShoppingListRepository implements ShoppingListRepository {
     const now = new Date().toISOString();
     await this.writeActiveList({
       ...list,
-      items: list.items.map((item) => (
-        item.id === itemId
-          ? { ...item, isPurchased, updatedAt: now }
-          : item
-      )),
+      items: list.items.map((item) =>
+        item.id === itemId ? { ...item, isPurchased, updatedAt: now } : item,
+      ),
+      updatedAt: now,
+    });
+  }
+
+  async updateItemSection(itemId: string, sectionName: string): Promise<void> {
+    const list = await this.readActiveList();
+
+    if (!list) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    await this.writeActiveList({
+      ...list,
+      items: list.items.map((item) =>
+        item.id === itemId ? { ...item, sectionName, updatedAt: now } : item,
+      ),
       updatedAt: now,
     });
   }
@@ -116,6 +138,9 @@ export class WebShoppingListRepository implements ShoppingListRepository {
   }
 
   private async writeActiveList(list: ShoppingList): Promise<void> {
-    await AsyncStorage.setItem(activeShoppingListStorageKey, JSON.stringify(list));
+    await AsyncStorage.setItem(
+      activeShoppingListStorageKey,
+      JSON.stringify(list),
+    );
   }
 }

@@ -1,7 +1,7 @@
-import { PayloadAction, createSlice } from '@reduxjs/toolkit';
-import { ShoppingList } from '../../../domain/entities/ShoppingList';
-import { ShoppingListItem } from '../../../domain/entities/ShoppingListItem';
-import { isProductAlreadyInList } from '../../../domain/services/ShoppingListDuplicateGuard';
+import { PayloadAction, createSlice } from "@reduxjs/toolkit";
+import { ShoppingList } from "../../../domain/entities/ShoppingList";
+import { ShoppingListItem } from "../../../domain/entities/ShoppingListItem";
+import { isProductAlreadyInList } from "../../../domain/services/ShoppingListDuplicateGuard";
 
 interface ShoppingListState {
   activeList: ShoppingList | null;
@@ -18,7 +18,7 @@ function updateListTimestamp(list: ShoppingList): void {
 }
 
 const shoppingListSlice = createSlice({
-  name: 'shoppingList',
+  name: "shoppingList",
   initialState,
   reducers: {
     setActiveList(state, action: PayloadAction<ShoppingList | null>) {
@@ -44,7 +44,9 @@ const shoppingListSlice = createSlice({
         return;
       }
 
-      const item = state.activeList.items.find((currentItem) => currentItem.id === action.payload);
+      const item = state.activeList.items.find(
+        (currentItem) => currentItem.id === action.payload,
+      );
 
       if (!item) {
         return;
@@ -54,12 +56,40 @@ const shoppingListSlice = createSlice({
       item.updatedAt = new Date().toISOString();
       updateListTimestamp(state.activeList);
     },
+
+    updateShoppingListItemSection(
+      state,
+      action: PayloadAction<{
+        itemId: string;
+        sectionName: string;
+        updatedAt?: string;
+      }>,
+    ) {
+      if (!state.activeList) {
+        return;
+      }
+
+      const item = state.activeList.items.find(
+        (currentItem) => currentItem.id === action.payload.itemId,
+      );
+
+      if (!item) {
+        return;
+      }
+
+      const updatedAt = action.payload.updatedAt ?? new Date().toISOString();
+      item.sectionName = action.payload.sectionName;
+      item.updatedAt = updatedAt;
+      updateListTimestamp(state.activeList);
+    },
     removeShoppingListItem(state, action: PayloadAction<string>) {
       if (!state.activeList) {
         return;
       }
 
-      state.activeList.items = state.activeList.items.filter((item) => item.id !== action.payload);
+      state.activeList.items = state.activeList.items.filter(
+        (item) => item.id !== action.payload,
+      );
       updateListTimestamp(state.activeList);
     },
     clearActiveShoppingList(state) {
@@ -80,6 +110,7 @@ export const {
   setActiveList,
   setShoppingListLoading,
   toggleShoppingListItemPurchased,
+  updateShoppingListItemSection,
 } = shoppingListSlice.actions;
 
 export default shoppingListSlice.reducer;

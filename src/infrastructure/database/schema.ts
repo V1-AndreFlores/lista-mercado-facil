@@ -64,4 +64,7 @@ CREATE TABLE IF NOT EXISTS user_product_preferences (
   market_id TEXT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_user_product_preferences_lookup
+ON user_product_preferences (product_normalized_name, market_id);
 `;

@@ -1,13 +1,13 @@
-import { ShoppingList } from '../../domain/entities/ShoppingList';
-import { ShoppingListItem } from '../../domain/entities/ShoppingListItem';
-import { ShoppingListRepository } from '../../domain/repositories/ShoppingListRepository';
-import { createId } from '../../shared/utils/createId';
-import { getDatabase } from '../database/database';
+import { ShoppingList } from "../../domain/entities/ShoppingList";
+import { ShoppingListItem } from "../../domain/entities/ShoppingListItem";
+import { ShoppingListRepository } from "../../domain/repositories/ShoppingListRepository";
+import { createId } from "../../shared/utils/createId";
+import { getDatabase } from "../database/database";
 import {
   ShoppingListItemRow,
   ShoppingListRow,
   mapShoppingListRow,
-} from './mappers/SQLiteShoppingListMapper';
+} from "./mappers/SQLiteShoppingListMapper";
 
 export class SQLiteShoppingListRepository implements ShoppingListRepository {
   async getActive(): Promise<ShoppingList | null> {
@@ -57,7 +57,10 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
       updatedAt: now,
     };
 
-    await database.runAsync('UPDATE shopping_lists SET is_active = 0, updated_at = ?', [now]);
+    await database.runAsync(
+      "UPDATE shopping_lists SET is_active = 0, updated_at = ?",
+      [now],
+    );
     await database.runAsync(
       `INSERT INTO shopping_lists (id, market_id, name, is_active, created_at, updated_at)
        VALUES (?, ?, ?, 1, ?, ?)`,
@@ -70,7 +73,10 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
   async save(list: ShoppingList): Promise<void> {
     const database = await getDatabase();
 
-    await database.runAsync('UPDATE shopping_lists SET is_active = 0, updated_at = ?', [list.updatedAt]);
+    await database.runAsync(
+      "UPDATE shopping_lists SET is_active = 0, updated_at = ?",
+      [list.updatedAt],
+    );
     await database.runAsync(
       `INSERT INTO shopping_lists (id, market_id, name, is_active, created_at, updated_at)
        VALUES (?, ?, ?, 1, ?, ?)`,
@@ -115,15 +121,21 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
       ],
     );
 
-    await database.runAsync('UPDATE shopping_lists SET updated_at = ? WHERE id = ?', [now, item.listId]);
+    await database.runAsync(
+      "UPDATE shopping_lists SET updated_at = ? WHERE id = ?",
+      [now, item.listId],
+    );
   }
 
-  async updateItemPurchaseStatus(itemId: string, isPurchased: boolean): Promise<void> {
+  async updateItemPurchaseStatus(
+    itemId: string,
+    isPurchased: boolean,
+  ): Promise<void> {
     const database = await getDatabase();
     const now = new Date().toISOString();
 
     const itemRow = await database.getFirstAsync<{ list_id: string }>(
-      'SELECT list_id FROM shopping_list_items WHERE id = ? LIMIT 1',
+      "SELECT list_id FROM shopping_list_items WHERE id = ? LIMIT 1",
       [itemId],
     );
 
@@ -135,7 +147,34 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
     );
 
     if (itemRow?.list_id) {
-      await database.runAsync('UPDATE shopping_lists SET updated_at = ? WHERE id = ?', [now, itemRow.list_id]);
+      await database.runAsync(
+        "UPDATE shopping_lists SET updated_at = ? WHERE id = ?",
+        [now, itemRow.list_id],
+      );
+    }
+  }
+
+  async updateItemSection(itemId: string, sectionName: string): Promise<void> {
+    const database = await getDatabase();
+    const now = new Date().toISOString();
+
+    const itemRow = await database.getFirstAsync<{ list_id: string }>(
+      "SELECT list_id FROM shopping_list_items WHERE id = ? LIMIT 1",
+      [itemId],
+    );
+
+    await database.runAsync(
+      `UPDATE shopping_list_items
+       SET section_name = ?, updated_at = ?
+       WHERE id = ?`,
+      [sectionName, now, itemId],
+    );
+
+    if (itemRow?.list_id) {
+      await database.runAsync(
+        "UPDATE shopping_lists SET updated_at = ? WHERE id = ?",
+        [now, itemRow.list_id],
+      );
     }
   }
 
@@ -144,14 +183,19 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
     const now = new Date().toISOString();
 
     const itemRow = await database.getFirstAsync<{ list_id: string }>(
-      'SELECT list_id FROM shopping_list_items WHERE id = ? LIMIT 1',
+      "SELECT list_id FROM shopping_list_items WHERE id = ? LIMIT 1",
       [itemId],
     );
 
-    await database.runAsync('DELETE FROM shopping_list_items WHERE id = ?', [itemId]);
+    await database.runAsync("DELETE FROM shopping_list_items WHERE id = ?", [
+      itemId,
+    ]);
 
     if (itemRow?.list_id) {
-      await database.runAsync('UPDATE shopping_lists SET updated_at = ? WHERE id = ?', [now, itemRow.list_id]);
+      await database.runAsync(
+        "UPDATE shopping_lists SET updated_at = ? WHERE id = ?",
+        [now, itemRow.list_id],
+      );
     }
   }
 
@@ -159,8 +203,14 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
     const database = await getDatabase();
     const now = new Date().toISOString();
 
-    await database.runAsync('DELETE FROM shopping_list_items WHERE list_id = ?', [listId]);
-    await database.runAsync('UPDATE shopping_lists SET updated_at = ? WHERE id = ?', [now, listId]);
+    await database.runAsync(
+      "DELETE FROM shopping_list_items WHERE list_id = ?",
+      [listId],
+    );
+    await database.runAsync(
+      "UPDATE shopping_lists SET updated_at = ? WHERE id = ?",
+      [now, listId],
+    );
   }
 
   private async getItemRows(listId: string): Promise<ShoppingListItemRow[]> {
