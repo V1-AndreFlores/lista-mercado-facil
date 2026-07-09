@@ -1,18 +1,17 @@
-import { NavigationContainer, DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme } from '@react-navigation/native';
+import {
+  DarkTheme as NavigationDarkTheme,
+  DefaultTheme as NavigationLightTheme,
+  NavigationContainer,
+} from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { HomeScreen } from '../../presentation/screens/HomeScreen';
 import { MarketsScreen } from '../../presentation/screens/MarketsScreen';
 import { SettingsScreen } from '../../presentation/screens/SettingsScreen';
 import { ShoppingListScreen } from '../../presentation/screens/ShoppingListScreen';
+import { SplashScreen } from '../../presentation/screens/SplashScreen';
 import { useAppSelector } from '../store/hooks';
 import { getAppTheme } from '../theme/AppTheme';
-
-export type RootStackParamList = {
-  Home: undefined;
-  ShoppingList: undefined;
-  Markets: undefined;
-  Settings: undefined;
-};
+import { RootStackParamList } from './RootStackParamList';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -36,7 +35,7 @@ export function AppNavigator() {
       }}
     >
       <Stack.Navigator
-        initialRouteName="Home"
+        initialRouteName="Splash"
         screenOptions={{
           headerShown: false,
           contentStyle: {
@@ -44,6 +43,7 @@ export function AppNavigator() {
           },
         }}
       >
+        <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="ShoppingList" component={ShoppingListScreen} />
         <Stack.Screen name="Markets" component={MarketsScreen} />
