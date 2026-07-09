@@ -187,7 +187,7 @@ function HistoryListCard({ list, marketName, isReusing, onReuse }: HistoryListCa
             Concluída em {completedDateTime} · {list.items.length} item{list.items.length === 1 ? '' : 's'}
           </AppText>
           <AppText muted style={styles.historyListMeta}>
-            Mercado: {marketName}
+            {marketName}
           </AppText>
         </View>
 
