@@ -4,6 +4,7 @@ import { seedInitialData } from './seedInitialData';
 
 const databaseName = 'lista_mercado_facil.db';
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
+let initializationPromise: Promise<void> | null = null;
 
 export function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (!databasePromise) {
@@ -13,7 +14,18 @@ export function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   return databasePromise;
 }
 
-export async function initializeDatabase(): Promise<void> {
+export function initializeDatabase(): Promise<void> {
+  if (!initializationPromise) {
+    initializationPromise = initializeDatabaseInternal().catch((error) => {
+      initializationPromise = null;
+      throw error;
+    });
+  }
+
+  return initializationPromise;
+}
+
+async function initializeDatabaseInternal(): Promise<void> {
   const database = await getDatabase();
   await database.execAsync('PRAGMA foreign_keys = ON;');
   await database.execAsync(databaseSchema);

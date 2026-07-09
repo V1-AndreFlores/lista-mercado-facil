@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Market } from '../../domain/entities/Market';
-import { initializeDatabase } from '../../infrastructure/database/database';
-import { SQLiteMarketRepository } from '../../infrastructure/repositories/SQLiteMarketRepository';
+import { createMarketRepository } from '../../infrastructure/repositories/MarketRepositoryFactory';
 import { AppCard } from '../components/AppCard';
 import { AppGradientHeader } from '../components/AppGradientHeader';
 import { AppScreen } from '../components/AppScreen';
@@ -19,8 +18,7 @@ export function MarketsScreen() {
     let isMounted = true;
 
     async function loadMarkets() {
-      await initializeDatabase();
-      const repository = new SQLiteMarketRepository();
+      const repository = await createMarketRepository();
       const result = await repository.getAll();
 
       if (isMounted) {

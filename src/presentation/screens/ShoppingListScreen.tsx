@@ -4,12 +4,11 @@ import { AddItemToShoppingListUseCase } from '../../domain/use-cases/AddItemToSh
 import { SortShoppingListByMarketRouteUseCase } from '../../domain/use-cases/SortShoppingListByMarketRouteUseCase';
 import { ProductCategorizer } from '../../domain/services/ProductCategorizer';
 import { isProductAlreadyInList } from '../../domain/services/ShoppingListDuplicateGuard';
-import { ShoppingList } from '../../domain/entities/ShoppingList';
 import { ShoppingListItem } from '../../domain/entities/ShoppingListItem';
 import { Market } from '../../domain/entities/Market';
 import { defaultCategories } from '../../infrastructure/seed/defaultCategories';
-import { defaultMarkets } from '../../infrastructure/seed/defaultMarkets';
-import { createId } from '../../shared/utils/createId';
+import { createMarketRepository } from '../../infrastructure/repositories/MarketRepositoryFactory';
+import { createShoppingListRepository } from '../../infrastructure/repositories/ShoppingListRepositoryFactory';
 import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
 import { setSelectedMarketId } from '../../app/store/slices/marketSlice';
 import {
@@ -31,6 +30,8 @@ export function ShoppingListScreen() {
   const activeList = useAppSelector((state) => state.shoppingList.activeList);
   const [market, setMarket] = useState<Market | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [screenError, setScreenError] = useState<string | null>(null);
   const [productName, setProductName] = useState('');
   const [productError, setProductError] = useState<string | null>(null);
   const [isClearConfirmationVisible, setIsClearConfirmationVisible] = useState(false);
@@ -52,27 +53,60 @@ export function ShoppingListScreen() {
   const canAddProduct = Boolean(trimmedProductName) && !isDuplicateProduct;
 
   useEffect(() => {
-    const defaultMarket = defaultMarkets.find((item) => item.isDefault) ?? defaultMarkets[0] ?? null;
+    let isMounted = true;
 
-    setMarket(defaultMarket);
-    dispatch(setSelectedMarketId(defaultMarket?.id ?? null));
+    async function loadActiveShoppingList() {
+      setIsLoading(true);
+      setScreenError(null);
 
-    if (defaultMarket && !activeList) {
-      const now = new Date().toISOString();
-      const list: ShoppingList = {
-        id: createId(),
-        marketId: defaultMarket.id,
-        name: 'Compra da semana',
-        items: [],
-        createdAt: now,
-        updatedAt: now,
-      };
+      try {
+        const marketRepository = await createMarketRepository();
+        const shoppingListRepository = await createShoppingListRepository();
+        const markets = await marketRepository.getAll();
+        const defaultMarket = markets.find((item) => item.isDefault) ?? markets[0] ?? null;
+        const persistedList = await shoppingListRepository.getActive();
 
-      dispatch(setActiveList(list));
+        if (!defaultMarket && !persistedList) {
+          throw new Error('Nenhum supermercado cadastrado.');
+        }
+
+        const selectedMarket = persistedList
+          ? markets.find((item) => item.id === persistedList.marketId) ?? defaultMarket
+          : defaultMarket;
+
+        if (!selectedMarket) {
+          throw new Error('Não foi possível identificar o supermercado da lista.');
+        }
+
+        const list = persistedList ?? (await shoppingListRepository.createActive(selectedMarket.id, 'Compra da semana'));
+
+        if (!isMounted) {
+          return;
+        }
+
+        setMarket(selectedMarket);
+        dispatch(setSelectedMarketId(selectedMarket.id));
+        dispatch(setActiveList(list));
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : 'Não foi possível carregar a lista.';
+        setScreenError(message);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
     }
 
-    setIsLoading(false);
-  }, [activeList, dispatch]);
+    void loadActiveShoppingList();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [dispatch]);
 
   function handleProductNameChange(value: string) {
     setProductName(value);
@@ -82,8 +116,8 @@ export function ShoppingListScreen() {
     }
   }
 
-  function handleAddItem() {
-    if (!trimmedProductName || !activeList) {
+  async function handleAddItem() {
+    if (!trimmedProductName || !activeList || isSaving) {
       return;
     }
 
@@ -92,24 +126,65 @@ export function ShoppingListScreen() {
       return;
     }
 
-    const updatedList = addItemUseCase.execute({
-      list: activeList,
-      productName: trimmedProductName,
-    });
+    setIsSaving(true);
 
-    const newItem = updatedList.items[updatedList.items.length - 1];
-    dispatch(addShoppingListItem(newItem));
-    setProductName('');
-    setProductError(null);
-    Keyboard.dismiss();
+    try {
+      const shoppingListRepository = await createShoppingListRepository();
+      const updatedList = addItemUseCase.execute({
+        list: activeList,
+        productName: trimmedProductName,
+      });
+
+      const newItem = updatedList.items[updatedList.items.length - 1];
+      await shoppingListRepository.addItem(newItem);
+
+      dispatch(addShoppingListItem(newItem));
+      setProductName('');
+      setProductError(null);
+      Keyboard.dismiss();
+    } catch {
+      setProductError('Não foi possível salvar este produto. Tente novamente.');
+    } finally {
+      setIsSaving(false);
+    }
   }
 
-  function handleToggleItem(itemId: string) {
-    dispatch(toggleShoppingListItemPurchased(itemId));
+  async function handleToggleItem(itemId: string) {
+    if (!activeList || isSaving) {
+      return;
+    }
+
+    const item = activeList.items.find((currentItem) => currentItem.id === itemId);
+
+    if (!item) {
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const shoppingListRepository = await createShoppingListRepository();
+      await shoppingListRepository.updateItemPurchaseStatus(itemId, !item.isPurchased);
+      dispatch(toggleShoppingListItemPurchased(itemId));
+    } finally {
+      setIsSaving(false);
+    }
   }
 
-  function handleRemoveItem(itemId: string) {
-    dispatch(removeShoppingListItem(itemId));
+  async function handleRemoveItem(itemId: string) {
+    if (isSaving) {
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const shoppingListRepository = await createShoppingListRepository();
+      await shoppingListRepository.removeItem(itemId);
+      dispatch(removeShoppingListItem(itemId));
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function handleRequestClearList() {
@@ -120,10 +195,22 @@ export function ShoppingListScreen() {
     setIsClearConfirmationVisible(false);
   }
 
-  function handleConfirmClearList() {
-    dispatch(clearActiveShoppingList());
-    setProductError(null);
-    setIsClearConfirmationVisible(false);
+  async function handleConfirmClearList() {
+    if (!activeList || isSaving) {
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const shoppingListRepository = await createShoppingListRepository();
+      await shoppingListRepository.clearItems(activeList.id);
+      dispatch(clearActiveShoppingList());
+      setProductError(null);
+      setIsClearConfirmationVisible(false);
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   if (isLoading) {
@@ -131,6 +218,17 @@ export function ShoppingListScreen() {
       <AppScreen bottomNavigation={false} contentStyle={styles.centeredContainer}>
         <ActivityIndicator color={theme.colors.primary} />
         <AppText muted style={styles.loadingText}>Carregando lista...</AppText>
+      </AppScreen>
+    );
+  }
+
+  if (screenError) {
+    return (
+      <AppScreen contentStyle={styles.centeredContainer}>
+        <AppCard elevated style={styles.errorCard}>
+          <AppText variant="subtitle">Não foi possível carregar a lista</AppText>
+          <AppText muted style={styles.errorText}>{screenError}</AppText>
+        </AppCard>
       </AppScreen>
     );
   }
@@ -187,8 +285,8 @@ export function ShoppingListScreen() {
             </AppText>
           ) : null}
 
-          <AppButton style={styles.addButton} disabled={!canAddProduct} onPress={handleAddItem}>
-            Adicionar à lista
+          <AppButton style={styles.addButton} disabled={!canAddProduct || isSaving} onPress={handleAddItem}>
+            {isSaving ? 'Salvando...' : 'Adicionar à lista'}
           </AppButton>
         </AppCard>
 
@@ -362,6 +460,13 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     content: {
       padding: theme.spacing.xl,
       gap: theme.spacing.lg,
+    },
+    errorCard: {
+      width: '100%',
+      padding: theme.spacing.xl,
+    },
+    errorText: {
+      marginTop: theme.spacing.sm,
     },
     summaryRow: {
       flexDirection: 'row',
