@@ -53,6 +53,21 @@ describe('shoppingListSlice', () => {
     expect(state.activeList?.items[0].name).toBe('banana');
   });
 
+  it('does not add duplicate products even when the text has different case or accents', () => {
+    const initialState = shoppingListReducer(undefined, setActiveList(createList()));
+    const withItem = shoppingListReducer(
+      initialState,
+      addShoppingListItem(createItem({ id: 'item-1', name: 'Leite', normalizedName: 'leite' })),
+    );
+
+    const state = shoppingListReducer(
+      withItem,
+      addShoppingListItem(createItem({ id: 'item-2', name: 'LEÍTE', normalizedName: 'leite' })),
+    );
+
+    expect(state.activeList?.items).toHaveLength(1);
+  });
+
   it('toggles an item as purchased', () => {
     const withList = shoppingListReducer(undefined, setActiveList(createList()));
     const withItem = shoppingListReducer(withList, addShoppingListItem(createItem()));

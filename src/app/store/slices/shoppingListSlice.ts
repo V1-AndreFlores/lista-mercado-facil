@@ -1,6 +1,7 @@
 import { PayloadAction, createSlice } from '@reduxjs/toolkit';
 import { ShoppingList } from '../../../domain/entities/ShoppingList';
 import { ShoppingListItem } from '../../../domain/entities/ShoppingListItem';
+import { isProductAlreadyInList } from '../../../domain/services/ShoppingListDuplicateGuard';
 
 interface ShoppingListState {
   activeList: ShoppingList | null;
@@ -28,6 +29,10 @@ const shoppingListSlice = createSlice({
     },
     addShoppingListItem(state, action: PayloadAction<ShoppingListItem>) {
       if (!state.activeList) {
+        return;
+      }
+
+      if (isProductAlreadyInList(state.activeList.items, action.payload.name)) {
         return;
       }
 
