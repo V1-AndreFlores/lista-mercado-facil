@@ -9,6 +9,8 @@ function createItem(name: string, sectionName: string): ShoppingListItem {
     id: name,
     listId: 'list-1',
     name,
+    quantity: 1,
+    unit: 'un',
     normalizedName: name.toLowerCase(),
     sectionName,
     isPurchased: false,

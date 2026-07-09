@@ -211,14 +211,15 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
 
     await database.runAsync(
       `INSERT OR REPLACE INTO shopping_list_items
-       (id, list_id, name, normalized_name, quantity, section_name, category_id, is_purchased, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, list_id, name, normalized_name, quantity, unit, section_name, category_id, is_purchased, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         item.id,
         item.listId,
         item.name,
         item.normalizedName,
-        item.quantity ?? null,
+        String(item.quantity ?? 1),
+        item.unit ?? 'un',
         item.sectionName,
         item.categoryId ?? null,
         item.isPurchased ? 1 : 0,
@@ -281,6 +282,30 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
     }
   }
 
+  async updateItemQuantityAndUnit(itemId: string, quantity: number, unit: string): Promise<void> {
+    await this.ensureListSchema();
+    const database = await getDatabase();
+    const now = new Date().toISOString();
+    const itemRow = await database.getFirstAsync<{ list_id: string }>(
+      'SELECT list_id FROM shopping_list_items WHERE id = ? LIMIT 1',
+      [itemId],
+    );
+
+    await database.runAsync(
+      `UPDATE shopping_list_items
+       SET quantity = ?, unit = ?, updated_at = ?
+       WHERE id = ?`,
+      [String(quantity > 0 ? quantity : 1), unit || 'un', now, itemId],
+    );
+
+    if (itemRow?.list_id) {
+      await database.runAsync(
+        'UPDATE shopping_lists SET updated_at = ? WHERE id = ?',
+        [now, itemRow.list_id],
+      );
+    }
+  }
+
   async removeItem(itemId: string): Promise<void> {
     await this.ensureListSchema();
     const database = await getDatabase();
@@ -318,7 +343,7 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
     const database = await getDatabase();
 
     return database.getAllAsync<ShoppingListItemRow>(
-      `SELECT id, list_id, name, normalized_name, quantity, section_name, category_id, is_purchased, created_at, updated_at
+      `SELECT id, list_id, name, normalized_name, quantity, unit, section_name, category_id, is_purchased, created_at, updated_at
        FROM shopping_list_items
        WHERE list_id = ?
        ORDER BY created_at ASC`,
@@ -349,6 +374,16 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
     } catch {
       // Column already exists.
     }
+
+    try {
+      await database.runAsync("ALTER TABLE shopping_list_items ADD COLUMN unit TEXT NOT NULL DEFAULT 'un'");
+    } catch {
+      // Column already exists.
+    }
+
+    await database.runAsync(
+      "UPDATE shopping_list_items SET quantity = '1' WHERE quantity IS NULL OR quantity = ''",
+    );
 
     await database.runAsync(
       "UPDATE shopping_lists SET status = 'active' WHERE status IS NULL OR status = ''",

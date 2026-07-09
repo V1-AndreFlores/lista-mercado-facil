@@ -8,6 +8,8 @@ function createItem(overrides: Partial<ShoppingListItem> = {}): ShoppingListItem
     id: 'item-1',
     listId: 'list-1',
     name: 'Leite',
+    quantity: 1,
+    unit: 'un',
     normalizedName: 'leite',
     sectionName: 'Frios e laticínios',
     categoryId: 'dairy',

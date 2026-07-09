@@ -15,6 +15,7 @@ export interface ShoppingListRepository {
   addItem(item: ShoppingListItem): Promise<void>;
   updateItemPurchaseStatus(itemId: string, isPurchased: boolean): Promise<void>;
   updateItemSection(itemId: string, sectionName: string): Promise<void>;
+  updateItemQuantityAndUnit(itemId: string, quantity: number, unit: string): Promise<void>;
   removeItem(itemId: string): Promise<void>;
   clearItems(listId: string): Promise<void>;
 }

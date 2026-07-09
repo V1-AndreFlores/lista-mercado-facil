@@ -1,13 +1,14 @@
-import { ShoppingList } from '../entities/ShoppingList';
-import { ShoppingListItem } from '../entities/ShoppingListItem';
-import { ProductCategorizer } from '../services/ProductCategorizer';
-import { normalizeText } from '../services/normalizeText';
-import { createId } from '../../shared/utils/createId';
+import { ShoppingList } from "../entities/ShoppingList";
+import { ShoppingListItem, ShoppingListItemUnit } from "../entities/ShoppingListItem";
+import { ProductCategorizer } from "../services/ProductCategorizer";
+import { normalizeText } from "../services/normalizeText";
+import { createId } from "../../shared/utils/createId";
 
 interface AddItemInput {
   list: ShoppingList;
   productName: string;
-  quantity?: string;
+  quantity?: number;
+  unit?: ShoppingListItemUnit;
 }
 
 export class AddItemToShoppingListUseCase {
@@ -22,7 +23,8 @@ export class AddItemToShoppingListUseCase {
       listId: input.list.id,
       name: input.productName.trim(),
       normalizedName: normalizeText(input.productName),
-      quantity: input.quantity,
+      quantity: input.quantity && input.quantity > 0 ? input.quantity : 1,
+      unit: input.unit ?? "un",
       sectionName: categorization.sectionName,
       categoryId: categorization.categoryId,
       isPurchased: false,

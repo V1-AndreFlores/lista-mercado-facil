@@ -9,6 +9,7 @@ export function toShoppingListSectionDto(section: SortedShoppingSection): Shoppi
       id: item.id,
       name: item.name,
       quantity: item.quantity,
+      unit: item.unit,
       isPurchased: item.isPurchased,
     })),
   };

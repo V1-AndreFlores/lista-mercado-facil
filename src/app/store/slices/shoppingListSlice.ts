@@ -82,6 +82,33 @@ const shoppingListSlice = createSlice({
       item.updatedAt = updatedAt;
       updateListTimestamp(state.activeList);
     },
+    updateShoppingListItemQuantityAndUnit(
+      state,
+      action: PayloadAction<{
+        itemId: string;
+        quantity: number;
+        unit: string;
+        updatedAt?: string;
+      }>,
+    ) {
+      if (!state.activeList) {
+        return;
+      }
+
+      const item = state.activeList.items.find(
+        (currentItem) => currentItem.id === action.payload.itemId,
+      );
+
+      if (!item) {
+        return;
+      }
+
+      const updatedAt = action.payload.updatedAt ?? new Date().toISOString();
+      item.quantity = action.payload.quantity > 0 ? action.payload.quantity : 1;
+      item.unit = action.payload.unit as typeof item.unit;
+      item.updatedAt = updatedAt;
+      updateListTimestamp(state.activeList);
+    },
     removeShoppingListItem(state, action: PayloadAction<string>) {
       if (!state.activeList) {
         return;
@@ -111,6 +138,7 @@ export const {
   setShoppingListLoading,
   toggleShoppingListItemPurchased,
   updateShoppingListItemSection,
+  updateShoppingListItemQuantityAndUnit,
 } = shoppingListSlice.actions;
 
 export default shoppingListSlice.reducer;

@@ -186,6 +186,15 @@ export class WebShoppingListRepository implements ShoppingListRepository {
     }));
   }
 
+  async updateItemQuantityAndUnit(itemId: string, quantity: number, unit: string): Promise<void> {
+    await this.updateItem(itemId, (item, now) => ({
+      ...item,
+      quantity: quantity > 0 ? quantity : 1,
+      unit: (unit || 'un') as ShoppingListItem['unit'],
+      updatedAt: now,
+    }));
+  }
+
   async removeItem(itemId: string): Promise<void> {
     const lists = await this.readLists();
     const now = new Date().toISOString();
@@ -287,7 +296,13 @@ export class WebShoppingListRepository implements ShoppingListRepository {
       ...list,
       name: list.name?.trim() || 'Lista de compras',
       status: list.status ?? 'active',
-      items: Array.isArray(list.items) ? list.items : [],
+      items: Array.isArray(list.items)
+        ? list.items.map((item) => ({
+            ...item,
+            quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
+            unit: (item.unit ?? 'un') as ShoppingListItem['unit'],
+          }))
+        : [],
     };
   }
 }

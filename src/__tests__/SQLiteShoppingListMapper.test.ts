@@ -20,7 +20,8 @@ const itemRows: ShoppingListItemRow[] = [
     list_id: 'list-1',
     name: 'Leite',
     normalized_name: 'leite',
-    quantity: null,
+    quantity: '2',
+    unit: 'L',
     section_name: 'Frios e laticínios',
     category_id: 'dairy',
     is_purchased: 1,
@@ -38,5 +39,7 @@ describe('SQLiteShoppingListMapper', () => {
     expect(list.items).toHaveLength(1);
     expect(list.items[0].normalizedName).toBe('leite');
     expect(list.items[0].isPurchased).toBe(true);
+    expect(list.items[0].quantity).toBe(2);
+    expect(list.items[0].unit).toBe('L');
   });
 });

@@ -17,6 +17,8 @@ function createItem(id: string, name: string, isPurchased: boolean): ShoppingLis
     id,
     listId: 'list-1',
     name,
+    quantity: 1,
+    unit: 'un',
     normalizedName: name,
     sectionName: 'Hortifruti',
     categoryId: 'produce',

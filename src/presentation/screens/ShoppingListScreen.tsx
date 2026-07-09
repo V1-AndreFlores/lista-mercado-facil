@@ -15,7 +15,7 @@ import { SortShoppingListByMarketRouteUseCase } from "../../domain/use-cases/Sor
 import { ProductCategorizer } from "../../domain/services/ProductCategorizer";
 import { isProductAlreadyInList } from "../../domain/services/ShoppingListDuplicateGuard";
 import { ShoppingList } from "../../domain/entities/ShoppingList";
-import { ShoppingListItem } from "../../domain/entities/ShoppingListItem";
+import { ShoppingListItem, ShoppingListItemUnit } from "../../domain/entities/ShoppingListItem";
 import { Market } from "../../domain/entities/Market";
 import { defaultCategories } from "../../infrastructure/seed/defaultCategories";
 import { createMarketRepository } from "../../infrastructure/repositories/MarketRepositoryFactory";
@@ -30,6 +30,7 @@ import {
   removeShoppingListItem,
   setActiveList,
   toggleShoppingListItemPurchased,
+  updateShoppingListItemQuantityAndUnit,
   updateShoppingListItemSection,
 } from "../../app/store/slices/shoppingListSlice";
 import { AppButton } from "../components/AppButton";
@@ -39,6 +40,10 @@ import { AppScreen } from "../components/AppScreen";
 import { AppText } from "../components/AppText";
 import { useAppTheme } from "../components/useAppTheme";
 
+const defaultProductQuantity = "1";
+const defaultProductUnit: ShoppingListItemUnit = "un";
+
+
 export function ShoppingListScreen() {
   const dispatch = useAppDispatch();
   const activeList = useAppSelector((state) => state.shoppingList.activeList);
@@ -47,6 +52,7 @@ export function ShoppingListScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [screenError, setScreenError] = useState<string | null>(null);
   const [productName, setProductName] = useState("");
+  const [productQuantity, setProductQuantity] = useState(defaultProductQuantity);
   const [productError, setProductError] = useState<string | null>(null);
   const [isClearConfirmationVisible, setIsClearConfirmationVisible] =
     useState(false);
@@ -63,6 +69,10 @@ export function ShoppingListScreen() {
     useState<ShoppingListItem | null>(null);
   const [itemPendingSectionChange, setItemPendingSectionChange] =
     useState<ShoppingListItem | null>(null);
+  const [itemPendingQuantityEdit, setItemPendingQuantityEdit] =
+    useState<ShoppingListItem | null>(null);
+  const [quantityEditValue, setQuantityEditValue] = useState(defaultProductQuantity);
+  const [quantityEditError, setQuantityEditError] = useState<string | null>(null);
   const theme = useAppTheme();
   const styles = createStyles(theme);
 
@@ -85,10 +95,13 @@ export function ShoppingListScreen() {
     activeList?.items.filter((item) => item.isPurchased).length ?? 0;
   const pendingItems = totalItems - purchasedItems;
   const trimmedProductName = productName.trim();
+  const parsedProductQuantity = parseQuantityInput(productQuantity);
+  const isProductQuantityValid = parsedProductQuantity !== null;
   const isDuplicateProduct = activeList
     ? isProductAlreadyInList(activeList.items, trimmedProductName)
     : false;
-  const canAddProduct = Boolean(trimmedProductName) && !isDuplicateProduct;
+  const canAddProduct =
+    Boolean(trimmedProductName) && !isDuplicateProduct && isProductQuantityValid;
 
   useFocusEffect(
     useCallback(() => {
@@ -173,6 +186,14 @@ export function ShoppingListScreen() {
     }
   }
 
+  function handleProductQuantityChange(value: string) {
+    setProductQuantity(value);
+
+    if (productError) {
+      setProductError(null);
+    }
+  }
+
   async function handleAddItem() {
     if (!trimmedProductName || !activeList || !market || isSaving) {
       return;
@@ -180,6 +201,11 @@ export function ShoppingListScreen() {
 
     if (isProductAlreadyInList(activeList.items, trimmedProductName)) {
       setProductError("Este produto já está na lista.");
+      return;
+    }
+
+    if (!isProductQuantityValid || parsedProductQuantity === null) {
+      setProductError("Informe uma quantidade válida.");
       return;
     }
 
@@ -192,6 +218,8 @@ export function ShoppingListScreen() {
       const updatedList = addItemUseCase.execute({
         list: activeList,
         productName: trimmedProductName,
+        quantity: parsedProductQuantity,
+        unit: defaultProductUnit,
       });
 
       const generatedItem = updatedList.items[updatedList.items.length - 1];
@@ -211,6 +239,7 @@ export function ShoppingListScreen() {
 
       dispatch(addShoppingListItem(newItem));
       setProductName("");
+      setProductQuantity(defaultProductQuantity);
       setProductError(null);
       Keyboard.dismiss();
     } catch {
@@ -335,6 +364,67 @@ export function ShoppingListScreen() {
       );
       setItemPendingSectionChange(null);
     } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function handleRequestEditItemQuantity(item: ShoppingListItem) {
+    if (isSaving) {
+      return;
+    }
+
+    setItemPendingQuantityEdit(item);
+    setQuantityEditValue(formatQuantityValue(item.quantity));
+    setQuantityEditError(null);
+  }
+
+  function handleCancelEditItemQuantity() {
+    if (isSaving) {
+      return;
+    }
+
+    setItemPendingQuantityEdit(null);
+    setQuantityEditValue(defaultProductQuantity);
+    setQuantityEditError(null);
+  }
+
+  async function handleConfirmEditItemQuantity() {
+    if (!itemPendingQuantityEdit || isSaving) {
+      return;
+    }
+
+    const parsedQuantity = parseQuantityInput(quantityEditValue);
+
+    if (parsedQuantity === null) {
+      setQuantityEditError("Informe uma quantidade válida.");
+      return;
+    }
+
+    setIsSaving(true);
+    setQuantityEditError(null);
+
+    try {
+      const now = new Date().toISOString();
+      const shoppingListRepository = await createShoppingListRepository();
+
+      await shoppingListRepository.updateItemQuantityAndUnit(
+        itemPendingQuantityEdit.id,
+        parsedQuantity,
+        defaultProductUnit,
+      );
+
+      dispatch(
+        updateShoppingListItemQuantityAndUnit({
+          itemId: itemPendingQuantityEdit.id,
+          quantity: parsedQuantity,
+          unit: defaultProductUnit,
+          updatedAt: now,
+        }),
+      );
+
+      setItemPendingQuantityEdit(null);
+      setQuantityEditValue(defaultProductQuantity);
+      } finally {
       setIsSaving(false);
     }
   }
@@ -486,6 +576,7 @@ export function ShoppingListScreen() {
       ]);
       setProductError(null);
       setProductName("");
+      setProductQuantity(defaultProductQuantity);
       setIsCompleteConfirmationVisible(false);
     } finally {
       setIsSaving(false);
@@ -620,8 +711,8 @@ export function ShoppingListScreen() {
                   Adicionar produto
                 </AppText>
                 <AppText muted style={styles.formSubtitle}>
-                  Digite um item por vez. O setor será identificado
-                  automaticamente.
+                  Digite um item por vez. Informe a quantidade quando
+                  necessário.
                 </AppText>
               </View>
             </View>
@@ -633,9 +724,19 @@ export function ShoppingListScreen() {
                 placeholder="Ex.: arroz, banana, leite"
                 placeholderTextColor={theme.colors.textSubtle}
                 style={styles.input}
+                returnKeyType="next"
+                autoCorrect={false}
+              />
+
+              <TextInput
+                value={productQuantity}
+                onChangeText={handleProductQuantityChange}
+                placeholder="Quantidade"
+                placeholderTextColor={theme.colors.textSubtle}
+                style={[styles.input, styles.quantityInput]}
+                keyboardType="decimal-pad"
                 returnKeyType="done"
                 onSubmitEditing={handleAddItem}
-                autoCorrect={false}
               />
             </View>
 
@@ -716,6 +817,9 @@ export function ShoppingListScreen() {
                         onChangeSection={() =>
                           handleRequestChangeItemSection(item)
                         }
+                        onEditQuantity={() =>
+                          handleRequestEditItemQuantity(item)
+                        }
                         onRemove={() => handleRequestRemoveItem(item)}
                       />
                     ))}
@@ -769,6 +873,21 @@ export function ShoppingListScreen() {
         itemName={itemPendingRemoval?.name ?? ""}
         onCancel={handleCancelRemoveItem}
         onConfirm={handleConfirmRemoveItem}
+      />
+
+      <EditItemQuantityModal
+        visible={Boolean(itemPendingQuantityEdit)}
+        itemName={itemPendingQuantityEdit?.name ?? ""}
+        quantityValue={quantityEditValue}
+        error={quantityEditError}
+        onChangeQuantity={(value) => {
+          setQuantityEditValue(value);
+          if (quantityEditError) {
+            setQuantityEditError(null);
+          }
+        }}
+        onCancel={handleCancelEditItemQuantity}
+        onConfirm={handleConfirmEditItemQuantity}
       />
 
       <ChangeItemSectionModal
@@ -1290,10 +1409,101 @@ function ChangeItemSectionModal({
   );
 }
 
+interface EditItemQuantityModalProps {
+  visible: boolean;
+  itemName: string;
+  quantityValue: string;
+  error: string | null;
+  onChangeQuantity: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function EditItemQuantityModal({
+  visible,
+  itemName,
+  quantityValue,
+  error,
+  onChangeQuantity,
+  onCancel,
+  onConfirm,
+}: EditItemQuantityModalProps) {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  return (
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={onCancel}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <AppText variant="subtitle" style={styles.modalTitle}>
+            Editar quantidade
+          </AppText>
+          <AppText muted style={styles.modalDescription}>
+            Ajuste a quantidade de "{itemName}" sem alterar o setor do produto.
+          </AppText>
+
+          <View style={styles.modalQuantityBlock}>
+            <TextInput
+              value={quantityValue}
+              onChangeText={onChangeQuantity}
+              placeholder="1"
+              placeholderTextColor={theme.colors.textSubtle}
+              style={[styles.input, styles.modalQuantityInput]}
+              keyboardType="decimal-pad"
+              returnKeyType="done"
+              onSubmitEditing={onConfirm}
+            />
+          </View>
+
+          {error ? (
+            <AppText variant="caption" style={styles.validationMessage}>
+              {error}
+            </AppText>
+          ) : null}
+
+          <View style={styles.modalActions}>
+            <Pressable
+              onPress={onCancel}
+              style={({ pressed }) => [
+                styles.modalButton,
+                styles.modalCancelButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.modalCancelText}>
+                Cancelar
+              </AppText>
+            </Pressable>
+
+            <Pressable
+              onPress={onConfirm}
+              style={({ pressed }) => [
+                styles.modalButton,
+                styles.modalPrimaryButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.modalPrimaryText}>
+                Salvar
+              </AppText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 interface ShoppingItemRowProps {
   item: ShoppingListItem;
   onToggle: () => void;
   onChangeSection: () => void;
+  onEditQuantity: () => void;
   onRemove: () => void;
 }
 
@@ -1301,6 +1511,7 @@ function ShoppingItemRow({
   item,
   onToggle,
   onChangeSection,
+  onEditQuantity,
   onRemove,
 }: ShoppingItemRowProps) {
   const theme = useAppTheme();
@@ -1345,9 +1556,9 @@ function ShoppingItemRow({
             item.isPurchased ? styles.itemNamePurchased : null,
           ]}
         >
-          {item.name}
+          {formatItemName(item)}
         </AppText>
-        <AppText subtle variant="caption">
+        <AppText variant="caption" subtle style={styles.itemQuantityText}>
           {item.isPurchased ? "Comprado" : "Pendente"} · {item.sectionName}
         </AppText>
       </Pressable>
@@ -1366,6 +1577,18 @@ function ShoppingItemRow({
         </Pressable>
 
         <Pressable
+          onPress={onEditQuantity}
+          style={({ pressed }) => [
+            styles.itemActionButton,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <AppText variant="caption" style={styles.itemActionButtonText}>
+            Qtde
+          </AppText>
+        </Pressable>
+
+        <Pressable
           onPress={onRemove}
           style={({ pressed }) => [
             styles.itemActionButton,
@@ -1380,6 +1603,40 @@ function ShoppingItemRow({
       </View>
     </View>
   );
+}
+
+function parseQuantityInput(rawValue: string): number | null {
+  const normalizedValue = rawValue.trim().replace(",", ".");
+
+  if (!normalizedValue) {
+    return 1;
+  }
+
+  const parsedValue = Number(normalizedValue);
+
+  if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+    return null;
+  }
+
+  return parsedValue;
+}
+
+function formatQuantityValue(quantity: number): string {
+  return Number.isInteger(quantity) ? String(quantity) : String(quantity).replace(".", ",");
+}
+
+function formatItemName(item: ShoppingListItem): string {
+  const quantity = item.quantity && item.quantity > 0 ? item.quantity : 1;
+
+  if (quantity === 1) {
+    return item.name;
+  }
+
+  const quantityText = Number.isInteger(quantity)
+    ? String(quantity)
+    : quantity.toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+
+  return `${quantityText}x ${item.name}`;
 }
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) {
@@ -1470,6 +1727,43 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     },
     inputRow: {
       gap: theme.spacing.sm,
+    },
+    quantityRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+    },
+    quantityInput: {
+      width: "100%",
+      textAlign: "center",
+    },
+    unitOptions: {
+      gap: theme.spacing.xs,
+      alignItems: "center",
+      paddingRight: theme.spacing.sm,
+    },
+    unitOption: {
+      minHeight: 38,
+      minWidth: 52,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: theme.radius.md,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surfaceMuted,
+      paddingHorizontal: theme.spacing.sm,
+    },
+    unitOptionSelected: {
+      borderColor: theme.colors.primary,
+      backgroundColor: theme.colors.primarySoft,
+    },
+    unitOptionText: {
+      color: theme.colors.textMuted,
+      fontWeight: "900",
+    },
+    unitOptionTextSelected: {
+      color: theme.colors.primaryStrong,
+      fontWeight: "900",
     },
     input: {
       minHeight: 54,
@@ -1621,8 +1915,12 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       textDecorationLine: "line-through",
       color: theme.colors.textSubtle,
     },
+    itemQuantityText: {
+      marginTop: 2,
+      fontWeight: "800",
+    },
     itemActions: {
-      width: 82,
+      width: 88,
       gap: 6,
     },
     itemActionButton: {
@@ -1702,6 +2000,19 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     },
     modalInput: {
       marginTop: theme.spacing.lg,
+    },
+    modalQuantityBlock: {
+      marginTop: theme.spacing.lg,
+      gap: theme.spacing.md,
+    },
+    modalQuantityInput: {
+      width: "100%",
+      textAlign: "center",
+    },
+    modalUnitGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: theme.spacing.sm,
     },
     modalDangerButton: {
       backgroundColor: theme.mode === "dark" ? "#7F1D1D" : "#FEE2E2",

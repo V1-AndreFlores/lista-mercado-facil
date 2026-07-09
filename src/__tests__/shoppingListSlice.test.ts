@@ -30,6 +30,8 @@ function createItem(
     listId: "list-1",
     name: "banana",
     normalizedName: "banana",
+    quantity: 1,
+    unit: "un",
     sectionName: "Hortifruti",
     categoryId: "produce",
     isPurchased: false,
