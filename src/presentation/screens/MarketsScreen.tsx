@@ -1,12 +1,19 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Market } from '../../domain/entities/Market';
 import { initializeDatabase } from '../../infrastructure/database/database';
 import { SQLiteMarketRepository } from '../../infrastructure/repositories/SQLiteMarketRepository';
+import { AppCard } from '../components/AppCard';
+import { AppGradientHeader } from '../components/AppGradientHeader';
+import { AppScreen } from '../components/AppScreen';
+import { AppText } from '../components/AppText';
+import { useAppTheme } from '../components/useAppTheme';
 
 export function MarketsScreen() {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
 
   useEffect(() => {
     let isMounted = true;
@@ -31,89 +38,116 @@ export function MarketsScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.centeredContainer}>
-        <ActivityIndicator />
-        <Text style={styles.loadingText}>Carregando supermercados...</Text>
-      </SafeAreaView>
+      <AppScreen bottomNavigation={false} contentStyle={styles.centeredContainer}>
+        <ActivityIndicator color={theme.colors.primary} />
+        <AppText muted style={styles.loadingText}>Carregando supermercados...</AppText>
+      </AppScreen>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.info}>
-          O supermercado inicial é criado por seed no banco local e poderá ser editado pelo usuário.
-        </Text>
+    <AppScreen scroll>
+      <AppGradientHeader
+        compact
+        eyebrow="Mercados"
+        title="Supermercados"
+        description="Cada mercado pode ter sua própria ordem de setores para deixar a compra mais eficiente."
+      />
 
+      <View style={styles.content}>
         {markets.map((market) => (
-          <View key={market.id} style={styles.card}>
-            <Text style={styles.marketName}>{market.name}</Text>
-            {!!market.address && <Text style={styles.address}>{market.address}</Text>}
-            <Text style={styles.sectionTitle}>Setores</Text>
+          <AppCard key={market.id} elevated style={styles.card}>
+            <View style={styles.marketHeader}>
+              <View style={styles.marketBadge}>
+                <AppText variant="caption" style={styles.marketBadgeText}>{market.isDefault ? 'Padrão' : 'Mercado'}</AppText>
+              </View>
+              <AppText variant="subtitle" style={styles.marketName}>{market.name}</AppText>
+              {!!market.address && <AppText muted style={styles.address}>{market.address}</AppText>}
+            </View>
+
+            <View style={styles.sectionHeader}>
+              <AppText variant="label" accent>Rota de setores</AppText>
+            </View>
+
             {market.sections.map((section) => (
-              <Text key={section.id} style={styles.sectionItem}>
-                {section.routeOrder}. {section.name}
-              </Text>
+              <View key={section.id} style={styles.sectionRow}>
+                <View style={styles.routeOrderCircle}>
+                  <AppText variant="caption" style={styles.routeOrder}>{section.routeOrder}</AppText>
+                </View>
+                <AppText muted style={styles.sectionName}>{section.name}</AppText>
+              </View>
             ))}
-          </View>
+          </AppCard>
         ))}
-      </ScrollView>
-    </SafeAreaView>
+      </View>
+    </AppScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F7F7F7',
-  },
-  centeredContainer: {
-    flex: 1,
-    backgroundColor: '#F7F7F7',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    color: '#52606D',
-  },
-  content: {
-    padding: 16,
-  },
-  info: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#52606D',
-    marginBottom: 16,
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E4E7EB',
-    marginBottom: 12,
-  },
-  marketName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1F2933',
-    marginBottom: 4,
-  },
-  address: {
-    fontSize: 14,
-    color: '#52606D',
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#323F4B',
-    marginBottom: 8,
-  },
-  sectionItem: {
-    fontSize: 15,
-    color: '#52606D',
-    paddingVertical: 2,
-  },
-});
+function createStyles(theme: ReturnType<typeof useAppTheme>) {
+  return StyleSheet.create({
+    centeredContainer: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: theme.spacing.xl,
+    },
+    loadingText: {
+      marginTop: theme.spacing.md,
+    },
+    content: {
+      padding: theme.spacing.lg,
+      gap: theme.spacing.lg,
+      
+    },
+    card: {
+      padding: theme.spacing.xl,
+    },
+    marketHeader: {
+      marginBottom: theme.spacing.lg,
+    },
+    marketBadge: {
+      alignSelf: 'flex-start',
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 6,
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.colors.primarySoft,
+      marginBottom: theme.spacing.md,
+    },
+    marketBadgeText: {
+      color: theme.colors.primaryStrong,
+      fontWeight: '900',
+    },
+    marketName: {
+      marginBottom: theme.spacing.xs,
+    },
+    address: {
+      marginTop: theme.spacing.xs,
+    },
+    sectionHeader: {
+      marginBottom: theme.spacing.sm,
+    },
+    sectionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: theme.spacing.sm,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+      gap: theme.spacing.md,
+    },
+    routeOrderCircle: {
+      width: 34,
+      height: 28,
+      borderRadius: theme.radius.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.surfaceMuted,
+    },
+    routeOrder: {
+      color: theme.colors.primary,
+      fontWeight: '900',
+    },
+    sectionName: {
+      flex: 1,
+    },
+  });
+}

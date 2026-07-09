@@ -2,11 +2,21 @@ import { PropsWithChildren, useEffect } from 'react';
 import { Provider } from 'react-redux';
 import { store } from '../store/store';
 import { initializeDatabase } from '../../infrastructure/database/database';
+import { loadThemeMode } from '../../application/state/theme/themeSlice';
 
-export function AppProviders({ children }: PropsWithChildren) {
+function AppBootstrap({ children }: PropsWithChildren) {
   useEffect(() => {
     void initializeDatabase();
+    void store.dispatch(loadThemeMode());
   }, []);
 
-  return <Provider store={store}>{children}</Provider>;
+  return children;
+}
+
+export function AppProviders({ children }: PropsWithChildren) {
+  return (
+    <Provider store={store}>
+      <AppBootstrap>{children}</AppBootstrap>
+    </Provider>
+  );
 }
