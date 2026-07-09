@@ -205,6 +205,39 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
     return this.getById(newList.id) as Promise<ShoppingList>;
   }
 
+
+  async deleteList(listId: string): Promise<void> {
+    await this.ensureListSchema();
+    const database = await getDatabase();
+
+    await database.runAsync('DELETE FROM shopping_list_items WHERE list_id = ?', [listId]);
+    await database.runAsync('DELETE FROM shopping_lists WHERE id = ?', [listId]);
+  }
+
+  async pruneCompletedLists(retentionDays: number | null): Promise<void> {
+    if (retentionDays === null) {
+      return;
+    }
+
+    await this.ensureListSchema();
+    const database = await getDatabase();
+    const cutoffDate = new Date(
+      Date.now() - retentionDays * 24 * 60 * 60 * 1000,
+    ).toISOString();
+
+    const rows = await database.getAllAsync<{ id: string }>(
+      `SELECT id
+       FROM shopping_lists
+       WHERE status = 'completed'
+         AND COALESCE(completed_at, updated_at) < ?`,
+      [cutoffDate],
+    );
+
+    for (const row of rows) {
+      await this.deleteList(row.id);
+    }
+  }
+
   async addItem(item: ShoppingListItem): Promise<void> {
     await this.ensureListSchema();
     const database = await getDatabase();

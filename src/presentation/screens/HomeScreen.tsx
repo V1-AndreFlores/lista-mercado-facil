@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../app/navigation/AppNavigator';
@@ -8,6 +8,7 @@ import { setSelectedMarketId } from '../../app/store/slices/marketSlice';
 import { setActiveList } from '../../app/store/slices/shoppingListSlice';
 import { ShoppingList } from '../../domain/entities/ShoppingList';
 import { defaultShoppingListName } from '../../domain/constants/shoppingListDefaults';
+import { AppSettingsRepository } from '../../infrastructure/repositories/AppSettingsRepository';
 import { createMarketRepository } from '../../infrastructure/repositories/MarketRepositoryFactory';
 import { createShoppingListRepository } from '../../infrastructure/repositories/ShoppingListRepositoryFactory';
 import { AppActionCard } from '../components/AppActionCard';
@@ -20,6 +21,8 @@ import { useAppTheme } from '../components/useAppTheme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
+const appSettingsRepository = new AppSettingsRepository();
+
 export function HomeScreen({ navigation }: Props) {
   const dispatch = useAppDispatch();
   const [history, setHistory] = useState<ShoppingList[]>([]);
@@ -27,6 +30,9 @@ export function HomeScreen({ navigation }: Props) {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [reusingListId, setReusingListId] = useState<string | null>(null);
+  const [deletingHistoryListId, setDeletingHistoryListId] = useState<string | null>(null);
+  const [historyListPendingDeletion, setHistoryListPendingDeletion] =
+    useState<ShoppingList | null>(null);
   const theme = useAppTheme();
   const styles = createStyles(theme);
 
@@ -35,16 +41,20 @@ export function HomeScreen({ navigation }: Props) {
     setHistoryError(null);
 
     try {
-      const [repository, marketRepository] = await Promise.all([
+      const [repository, marketRepository, settings] = await Promise.all([
         createShoppingListRepository(),
         createMarketRepository(),
+        appSettingsRepository.getSettings(),
       ]);
+
+      await repository.pruneCompletedLists(settings.historyRetentionDays);
+
       const [completedLists, markets] = await Promise.all([
         repository.getCompleted(),
         marketRepository.getAll(),
       ]);
 
-      setHistory(completedLists.slice(0, 3));
+      setHistory(completedLists);
       setMarketNamesById(
         markets.reduce<Record<string, string>>((accumulator, market) => {
           accumulator[market.id] = market.name;
@@ -65,7 +75,7 @@ export function HomeScreen({ navigation }: Props) {
   );
 
   async function handleReuseList(list: ShoppingList) {
-    if (reusingListId) {
+    if (reusingListId || deletingHistoryListId) {
       return;
     }
 
@@ -91,76 +101,126 @@ export function HomeScreen({ navigation }: Props) {
     }
   }
 
+  function handleRequestDeleteHistoryList(list: ShoppingList) {
+    if (reusingListId || deletingHistoryListId) {
+      return;
+    }
+
+    setHistoryListPendingDeletion(list);
+  }
+
+  function handleCancelDeleteHistoryList() {
+    if (deletingHistoryListId) {
+      return;
+    }
+
+    setHistoryListPendingDeletion(null);
+  }
+
+  async function handleConfirmDeleteHistoryList() {
+    if (!historyListPendingDeletion || deletingHistoryListId) {
+      return;
+    }
+
+    setDeletingHistoryListId(historyListPendingDeletion.id);
+    setHistoryError(null);
+
+    try {
+      const shoppingListRepository = await createShoppingListRepository();
+      await shoppingListRepository.deleteList(historyListPendingDeletion.id);
+      setHistory((currentHistory) =>
+        currentHistory.filter((list) => list.id !== historyListPendingDeletion.id),
+      );
+      setHistoryListPendingDeletion(null);
+    } catch {
+      setHistoryError('Não foi possível apagar esta lista do histórico.');
+    } finally {
+      setDeletingHistoryListId(null);
+    }
+  }
+
   return (
-    <AppScreen scroll>
-      <AppGradientHeader
-        eyebrow="Compras inteligentes"
-        title="Lista de Mercado Fácil"
-        description="Monte sua lista, organize por setores e siga uma rota mais eficiente no supermercado."
-      />
+    <>
+      <AppScreen scroll>
+        <AppGradientHeader
+          eyebrow="Compras inteligentes"
+          title="Lista de Mercado Fácil"
+          description="Monte sua lista, organize por setores e siga uma rota mais eficiente no supermercado."
+        />
 
-      <View style={styles.content}>
-        <AppCard elevated style={styles.primaryCard}>
-          <View style={styles.primaryAccent} />
-          <AppText variant="label" accent>Rota de compra</AppText>
-          <AppText variant="headline" style={styles.cardTitle}>Sua lista em ordem, setor por setor.</AppText>
-          <AppText muted style={styles.cardDescription}>
-            Adicione produtos e o aplicativo agrupa tudo conforme os setores do supermercado selecionado.
-          </AppText>
-          <AppButton onPress={() => navigation.navigate('ShoppingList')} style={styles.primaryButton}>
-            Começar lista
-          </AppButton>
-        </AppCard>
-
-        <View style={styles.actionsRow}>
-          <AppActionCard
-            label="Mercados"
-            title="Supermercados"
-            description="Personalize setores e rotas por mercado."
-            onPress={() => navigation.navigate('Markets')}
-          />
-          <AppActionCard
-            label="Ajustes"
-            title="Configurações"
-            description="Defina tema claro ou escuro."
-            onPress={() => navigation.navigate('Settings')}
-          />
-        </View>
-
-        <View style={styles.historyHeader}>
-          <View>
-            <AppText variant="label" accent>Histórico</AppText>
-            <AppText variant="subtitle" style={styles.historyTitle}>Listas concluídas</AppText>
-          </View>
-          {isLoadingHistory ? <ActivityIndicator color={theme.colors.primary} /> : null}
-        </View>
-
-        {historyError ? (
-          <AppCard elevated style={styles.errorCard}>
-            <AppText muted>{historyError}</AppText>
-          </AppCard>
-        ) : null}
-
-        {!isLoadingHistory && history.length === 0 ? (
-          <AppCard elevated style={styles.emptyHistoryCard}>
-            <AppText variant="subtitle">Nenhuma compra concluída ainda</AppText>
-            <AppText muted style={styles.emptyHistoryText}>
-              Quando você concluir uma compra, ela aparecerá aqui para consulta e reutilização futura.
+        <View style={styles.content}>
+          <AppCard elevated style={styles.primaryCard}>
+            <View style={styles.primaryAccent} />
+            <AppText variant="label" accent>Rota de compra</AppText>
+            <AppText variant="headline" style={styles.cardTitle}>Sua lista em ordem, setor por setor.</AppText>
+            <AppText muted style={styles.cardDescription}>
+              Adicione produtos e o aplicativo agrupa tudo conforme os setores do supermercado selecionado.
             </AppText>
+            <AppButton onPress={() => navigation.navigate('ShoppingList')} style={styles.primaryButton}>
+              Começar lista
+            </AppButton>
           </AppCard>
-        ) : null}
 
-        {history.map((list) => (
-          <HistoryListCard
-            key={list.id}
-            list={list}
-            marketName={marketNamesById[list.marketId] ?? 'Mercado não informado'}
-            isReusing={reusingListId === list.id}
-            onReuse={() => handleReuseList(list)}
-          />
-        ))}
-      </View>
-    </AppScreen>
+          <View style={styles.actionsRow}>
+            <AppActionCard
+              label="Mercados"
+              title="Supermercados"
+              description="Personalize setores e rotas por mercado."
+              onPress={() => navigation.navigate('Markets')}
+            />
+            <AppActionCard
+              label="Ajustes"
+              title="Configurações"
+              description="Tema e histórico de compras."
+              onPress={() => navigation.navigate('Settings')}
+            />
+          </View>
+
+          <View style={styles.historyHeader}>
+            <View>
+              <AppText variant="label" accent>Histórico</AppText>
+              <AppText variant="subtitle" style={styles.historyTitle}>Listas concluídas</AppText>
+            </View>
+            {isLoadingHistory ? <ActivityIndicator color={theme.colors.primary} /> : null}
+          </View>
+
+          {historyError ? (
+            <AppCard elevated style={styles.errorCard}>
+              <AppText muted>{historyError}</AppText>
+            </AppCard>
+          ) : null}
+
+          {!isLoadingHistory && history.length === 0 ? (
+            <AppCard elevated style={styles.emptyHistoryCard}>
+              <AppText variant="subtitle">Nenhuma compra concluída ainda</AppText>
+              <AppText muted style={styles.emptyHistoryText}>
+                Quando você concluir uma compra, ela aparecerá aqui para consulta e reutilização futura.
+              </AppText>
+            </AppCard>
+          ) : null}
+
+          {history.map((list) => (
+            <HistoryListCard
+              key={list.id}
+              list={list}
+              marketName={marketNamesById[list.marketId] ?? 'Mercado não informado'}
+              isReusing={reusingListId === list.id}
+              isDeleting={deletingHistoryListId === list.id}
+              onReuse={() => handleReuseList(list)}
+              onDelete={() => handleRequestDeleteHistoryList(list)}
+            />
+          ))}
+        </View>
+      </AppScreen>
+
+      <ConfirmDeleteHistoryListModal
+        visible={Boolean(historyListPendingDeletion)}
+        listName={historyListPendingDeletion?.name ?? ''}
+        isDeleting={Boolean(deletingHistoryListId)}
+        onCancel={handleCancelDeleteHistoryList}
+        onConfirm={handleConfirmDeleteHistoryList}
+      />
+    </>
   );
 }
 
@@ -168,13 +228,23 @@ interface HistoryListCardProps {
   list: ShoppingList;
   marketName: string;
   isReusing: boolean;
+  isDeleting: boolean;
   onReuse: () => void;
+  onDelete: () => void;
 }
 
-function HistoryListCard({ list, marketName, isReusing, onReuse }: HistoryListCardProps) {
+function HistoryListCard({
+  list,
+  marketName,
+  isReusing,
+  isDeleting,
+  onReuse,
+  onDelete,
+}: HistoryListCardProps) {
   const theme = useAppTheme();
   const styles = createStyles(theme);
   const completedDateTime = formatDateTime(list.completedAt ?? list.updatedAt);
+  const isBusy = isReusing || isDeleting;
 
   return (
     <AppCard elevated style={styles.historyCard}>
@@ -191,21 +261,101 @@ function HistoryListCard({ list, marketName, isReusing, onReuse }: HistoryListCa
           </AppText>
         </View>
 
-        <Pressable
-          disabled={isReusing}
-          onPress={onReuse}
-          style={({ pressed }) => [
-            styles.reuseButton,
-            isReusing ? styles.disabledButton : null,
-            pressed ? styles.pressed : null,
-          ]}
-        >
-          <AppText variant="caption" style={styles.reuseButtonText}>
-            {isReusing ? '...' : 'Reutilizar'}
-          </AppText>
-        </Pressable>
+        <View style={styles.historyActions}>
+          <Pressable
+            disabled={isBusy}
+            onPress={onReuse}
+            style={({ pressed }) => [
+              styles.reuseButton,
+              isBusy ? styles.disabledButton : null,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <AppText variant="caption" style={styles.reuseButtonText}>
+              {isReusing ? '...' : 'Reutilizar'}
+            </AppText>
+          </Pressable>
+
+          <Pressable
+            disabled={isBusy}
+            onPress={onDelete}
+            style={({ pressed }) => [
+              styles.deleteHistoryButton,
+              isBusy ? styles.disabledButton : null,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <AppText variant="caption" style={styles.deleteHistoryButtonText}>
+              {isDeleting ? '...' : 'Apagar'}
+            </AppText>
+          </Pressable>
+        </View>
       </View>
     </AppCard>
+  );
+}
+
+interface ConfirmDeleteHistoryListModalProps {
+  visible: boolean;
+  listName: string;
+  isDeleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function ConfirmDeleteHistoryListModal({
+  visible,
+  listName,
+  isDeleting,
+  onCancel,
+  onConfirm,
+}: ConfirmDeleteHistoryListModalProps) {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <AppText variant="subtitle" style={styles.modalTitle}>
+            Apagar histórico?
+          </AppText>
+          <AppText muted style={styles.modalDescription}>
+            Você está prestes a apagar "{listName}" do histórico. Essa ação não poderá ser desfeita.
+          </AppText>
+
+          <View style={styles.modalActions}>
+            <Pressable
+              disabled={isDeleting}
+              onPress={onCancel}
+              style={({ pressed }) => [
+                styles.modalButton,
+                styles.modalCancelButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.modalCancelText}>
+                Cancelar
+              </AppText>
+            </Pressable>
+
+            <Pressable
+              disabled={isDeleting}
+              onPress={onConfirm}
+              style={({ pressed }) => [
+                styles.modalButton,
+                styles.modalDangerButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.modalDangerText}>
+                {isDeleting ? 'Apagando...' : 'Apagar'}
+              </AppText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -300,9 +450,13 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       fontSize: 13,
       lineHeight: 18,
     },
+    historyActions: {
+      gap: theme.spacing.sm,
+    },
     reuseButton: {
-      minHeight: 40,
+      minHeight: 38,
       justifyContent: 'center',
+      alignItems: 'center',
       borderRadius: theme.radius.md,
       backgroundColor: theme.colors.primarySoft,
       paddingHorizontal: theme.spacing.md,
@@ -311,8 +465,77 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       color: theme.colors.primaryStrong,
       fontWeight: '900',
     },
+    deleteHistoryButton: {
+      minHeight: 34,
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.mode === 'dark' ? '#3F1D1D' : '#FEE2E2',
+      paddingHorizontal: theme.spacing.md,
+    },
+    deleteHistoryButtonText: {
+      color: theme.mode === 'dark' ? '#FECACA' : '#B91C1C',
+      fontWeight: '900',
+    },
     disabledButton: {
       opacity: 0.48,
+    },
+    modalOverlay: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: theme.spacing.xl,
+      backgroundColor:
+        theme.mode === 'dark'
+          ? 'rgba(2, 6, 23, 0.78)'
+          : 'rgba(15, 23, 42, 0.34)',
+    },
+    modalCard: {
+      width: '100%',
+      maxWidth: 360,
+      backgroundColor: theme.colors.surfaceElevated,
+      borderRadius: theme.radius.xl,
+      padding: theme.spacing.xl,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      shadowColor: theme.colors.shadow,
+      shadowOffset: { width: 0, height: 18 },
+      shadowOpacity: theme.mode === 'dark' ? 0.42 : 0.18,
+      shadowRadius: 30,
+      elevation: 8,
+    },
+    modalTitle: {
+      color: theme.colors.text,
+    },
+    modalDescription: {
+      marginTop: theme.spacing.sm,
+      lineHeight: 22,
+    },
+    modalActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: theme.spacing.sm,
+      marginTop: theme.spacing.xl,
+    },
+    modalButton: {
+      minHeight: 42,
+      justifyContent: 'center',
+      borderRadius: theme.radius.md,
+      paddingHorizontal: theme.spacing.lg,
+    },
+    modalCancelButton: {
+      backgroundColor: theme.colors.surfaceMuted,
+    },
+    modalDangerButton: {
+      backgroundColor: theme.mode === 'dark' ? '#7F1D1D' : '#FEE2E2',
+    },
+    modalCancelText: {
+      color: theme.colors.textMuted,
+      fontWeight: '900',
+    },
+    modalDangerText: {
+      color: theme.mode === 'dark' ? '#FECACA' : '#B91C1C',
+      fontWeight: '900',
     },
     pressed: {
       opacity: 0.72,

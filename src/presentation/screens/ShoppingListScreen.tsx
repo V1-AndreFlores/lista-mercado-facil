@@ -66,6 +66,9 @@ export function ShoppingListScreen() {
   const [isSelectListModalVisible, setIsSelectListModalVisible] =
     useState(false);
   const [availableLists, setAvailableLists] = useState<ShoppingList[]>([]);
+  const [listPendingDeletion, setListPendingDeletion] =
+    useState<ShoppingList | null>(null);
+  const [isDeletingList, setIsDeletingList] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [newListError, setNewListError] = useState<string | null>(null);
   const [editListName, setEditListName] = useState("");
@@ -485,6 +488,75 @@ export function ShoppingListScreen() {
       setScreenError("Não foi possível selecionar esta lista.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  function handleRequestDeleteList(list: ShoppingList) {
+    if (isSaving || isDeletingList) {
+      return;
+    }
+
+    setListPendingDeletion(list);
+  }
+
+  function handleCancelDeleteList() {
+    if (isDeletingList) {
+      return;
+    }
+
+    setListPendingDeletion(null);
+  }
+
+  async function handleConfirmDeleteList() {
+    if (!listPendingDeletion || isSaving || isDeletingList || !market) {
+      return;
+    }
+
+    setIsDeletingList(true);
+    setScreenError(null);
+
+    try {
+      const shoppingListRepository = await createShoppingListRepository();
+      const marketRepository = await createMarketRepository();
+      const deletedListId = listPendingDeletion.id;
+
+      await shoppingListRepository.deleteList(deletedListId);
+
+      let openLists = (await shoppingListRepository.getAll()).filter(
+        (currentList) => currentList.status !== "completed",
+      );
+
+      if (activeList?.id === deletedListId) {
+        let nextActiveList: ShoppingList | null = null;
+
+        if (openLists.length > 0) {
+          nextActiveList =
+            (await shoppingListRepository.setActive(openLists[0].id)) ?? openLists[0];
+        } else {
+          nextActiveList = await shoppingListRepository.createActive(
+            market.id,
+            defaultShoppingListName,
+          );
+          openLists = [nextActiveList];
+        }
+
+        const selectedMarket = await marketRepository.getById(nextActiveList.marketId);
+
+        if (selectedMarket) {
+          await marketRepository.setActiveMarketId(selectedMarket.id);
+          dispatch(setSelectedMarketId(selectedMarket.id));
+          setMarket(selectedMarket);
+        }
+
+        dispatch(setActiveList(nextActiveList));
+      }
+
+      setAvailableLists(openLists);
+      setListPendingDeletion(null);
+    } catch {
+      setScreenError("Não foi possível apagar esta lista.");
+    } finally {
+      setIsDeletingList(false);
     }
   }
 
@@ -910,6 +982,15 @@ export function ShoppingListScreen() {
         activeListId={activeList.id}
         onCancel={handleCancelSelectList}
         onSelectList={handleConfirmSelectList}
+        onRequestDeleteList={handleRequestDeleteList}
+      />
+
+      <ConfirmDeleteShoppingListModal
+        visible={Boolean(listPendingDeletion)}
+        listName={listPendingDeletion?.name ?? ""}
+        isDeleting={isDeletingList}
+        onCancel={handleCancelDeleteList}
+        onConfirm={handleConfirmDeleteList}
       />
 
       <CreateShoppingListModal
@@ -1024,6 +1105,7 @@ interface SelectShoppingListModalProps {
   activeListId: string;
   onCancel: () => void;
   onSelectList: (list: ShoppingList) => void;
+  onRequestDeleteList: (list: ShoppingList) => void;
 }
 
 function SelectShoppingListModal({
@@ -1032,6 +1114,7 @@ function SelectShoppingListModal({
   activeListId,
   onCancel,
   onSelectList,
+  onRequestDeleteList,
 }: SelectShoppingListModalProps) {
   const theme = useAppTheme();
   const styles = createStyles(theme);
@@ -1064,24 +1147,43 @@ function SelectShoppingListModal({
               const isSelected = list.id === activeListId;
 
               return (
-                <Pressable
+                <View
                   key={list.id}
-                  onPress={() => onSelectList(list)}
-                  style={({ pressed }) => [
+                  style={[
                     styles.sectionOption,
+                    styles.sectionOptionRow,
                     isSelected ? styles.sectionOptionSelected : null,
-                    pressed ? styles.pressed : null,
                   ]}
                 >
-                  <View style={styles.sectionOptionTextContainer}>
-                    <AppText style={styles.sectionOptionName}>
-                      {list.name}
+                  <Pressable
+                    onPress={() => onSelectList(list)}
+                    style={({ pressed }) => [
+                      styles.sectionOptionSelectArea,
+                      pressed ? styles.pressed : null,
+                    ]}
+                  >
+                    <View style={styles.sectionOptionTextContainer}>
+                      <AppText style={styles.sectionOptionName}>
+                        {list.name}
+                      </AppText>
+                      <AppText variant="caption" accent={isSelected} subtle={!isSelected}>
+                        {isSelected ? "Lista atual" : `${list.items.length} item${list.items.length === 1 ? "" : "s"}`}
+                      </AppText>
+                    </View>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => onRequestDeleteList(list)}
+                    style={({ pressed }) => [
+                      styles.sectionDeleteButton,
+                      pressed ? styles.pressed : null,
+                    ]}
+                  >
+                    <AppText variant="caption" style={styles.sectionDeleteButtonText}>
+                      Apagar
                     </AppText>
-                    <AppText variant="caption" accent={isSelected} subtle={!isSelected}>
-                      {isSelected ? "Lista atual" : `${list.items.length} item${list.items.length === 1 ? "" : "s"}`}
-                    </AppText>
-                  </View>
-                </Pressable>
+                  </Pressable>
+                </View>
               );
             })}
           </ScrollView>
@@ -1097,6 +1199,76 @@ function SelectShoppingListModal({
             >
               <AppText variant="caption" style={styles.modalCancelText}>
                 Cancelar
+              </AppText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+interface ConfirmDeleteShoppingListModalProps {
+  visible: boolean;
+  listName: string;
+  isDeleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function ConfirmDeleteShoppingListModal({
+  visible,
+  listName,
+  isDeleting,
+  onCancel,
+  onConfirm,
+}: ConfirmDeleteShoppingListModalProps) {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  return (
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={onCancel}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <AppText variant="subtitle" style={styles.modalTitle}>
+            Apagar lista?
+          </AppText>
+          <AppText muted style={styles.modalDescription}>
+            Você está prestes a apagar "{listName}". Essa ação não poderá ser
+            desfeita.
+          </AppText>
+
+          <View style={styles.modalActions}>
+            <Pressable
+              disabled={isDeleting}
+              onPress={onCancel}
+              style={({ pressed }) => [
+                styles.modalButton,
+                styles.modalCancelButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.modalCancelText}>
+                Cancelar
+              </AppText>
+            </Pressable>
+
+            <Pressable
+              disabled={isDeleting}
+              onPress={onConfirm}
+              style={({ pressed }) => [
+                styles.modalButton,
+                styles.modalDangerButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.modalDangerText}>
+                {isDeleting ? "Apagando..." : "Apagar"}
               </AppText>
             </Pressable>
           </View>
@@ -2201,6 +2373,28 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       backgroundColor: theme.colors.surfaceMuted,
       paddingHorizontal: theme.spacing.lg,
       paddingVertical: theme.spacing.sm,
+    },
+    sectionOptionRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+      paddingRight: theme.spacing.sm,
+    },
+    sectionOptionSelectArea: {
+      flex: 1,
+      minHeight: 50,
+      justifyContent: "center",
+    },
+    sectionDeleteButton: {
+      minHeight: 34,
+      justifyContent: "center",
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.mode === "dark" ? "#3F1D1D" : "#FEE2E2",
+      paddingHorizontal: theme.spacing.md,
+    },
+    sectionDeleteButtonText: {
+      color: theme.mode === "dark" ? "#FECACA" : "#B91C1C",
+      fontWeight: "900",
     },
     sectionOptionSelected: {
       borderColor: theme.colors.primary,

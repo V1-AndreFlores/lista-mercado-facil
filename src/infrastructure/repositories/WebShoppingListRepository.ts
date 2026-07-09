@@ -154,6 +154,42 @@ export class WebShoppingListRepository implements ShoppingListRepository {
     return reusedList;
   }
 
+
+  async deleteList(listId: string): Promise<void> {
+    const lists = await this.readLists();
+    await this.writeLists(lists.filter((list) => list.id !== listId));
+
+    const activeId = await AsyncStorage.getItem(activeShoppingListIdStorageKey);
+    if (activeId === listId) {
+      await AsyncStorage.removeItem(activeShoppingListIdStorageKey);
+    }
+  }
+
+  async pruneCompletedLists(retentionDays: number | null): Promise<void> {
+    if (retentionDays === null) {
+      return;
+    }
+
+    const lists = await this.readLists();
+    const cutoffTime = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+
+    await this.writeLists(
+      lists.filter((list) => {
+        if (list.status !== 'completed') {
+          return true;
+        }
+
+        const completedAt = new Date(list.completedAt ?? list.updatedAt).getTime();
+
+        if (Number.isNaN(completedAt)) {
+          return true;
+        }
+
+        return completedAt >= cutoffTime;
+      }),
+    );
+  }
+
   async addItem(item: ShoppingListItem): Promise<void> {
     const lists = await this.readLists();
     const now = new Date().toISOString();
