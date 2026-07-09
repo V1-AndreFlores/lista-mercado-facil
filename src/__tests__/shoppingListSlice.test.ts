@@ -15,6 +15,7 @@ function createList(): ShoppingList {
     id: "list-1",
     marketId: "market-1",
     name: "Compra da semana",
+    status: "active",
     items: [],
     createdAt: now,
     updatedAt: now,

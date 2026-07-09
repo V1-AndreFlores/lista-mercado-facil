@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS shopping_lists (
   market_id TEXT NOT NULL,
   name TEXT NOT NULL,
   is_active INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'active',
+  completed_at TEXT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (market_id) REFERENCES markets(id)

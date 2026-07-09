@@ -8,6 +8,8 @@ const listRow: ShoppingListRow = {
   id: 'list-1',
   market_id: 'market-1',
   name: 'Compra da semana',
+  status: 'active',
+  completed_at: null,
   created_at: '2026-07-09T00:00:00.000Z',
   updated_at: '2026-07-09T00:00:00.000Z',
 };

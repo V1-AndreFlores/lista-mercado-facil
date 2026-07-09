@@ -14,6 +14,7 @@ import { AddItemToShoppingListUseCase } from "../../domain/use-cases/AddItemToSh
 import { SortShoppingListByMarketRouteUseCase } from "../../domain/use-cases/SortShoppingListByMarketRouteUseCase";
 import { ProductCategorizer } from "../../domain/services/ProductCategorizer";
 import { isProductAlreadyInList } from "../../domain/services/ShoppingListDuplicateGuard";
+import { ShoppingList } from "../../domain/entities/ShoppingList";
 import { ShoppingListItem } from "../../domain/entities/ShoppingListItem";
 import { Market } from "../../domain/entities/Market";
 import { defaultCategories } from "../../infrastructure/seed/defaultCategories";
@@ -49,6 +50,15 @@ export function ShoppingListScreen() {
   const [productError, setProductError] = useState<string | null>(null);
   const [isClearConfirmationVisible, setIsClearConfirmationVisible] =
     useState(false);
+  const [isCompleteConfirmationVisible, setIsCompleteConfirmationVisible] =
+    useState(false);
+  const [isCreateListModalVisible, setIsCreateListModalVisible] =
+    useState(false);
+  const [isSelectListModalVisible, setIsSelectListModalVisible] =
+    useState(false);
+  const [availableLists, setAvailableLists] = useState<ShoppingList[]>([]);
+  const [newListName, setNewListName] = useState("");
+  const [newListError, setNewListError] = useState<string | null>(null);
   const [itemPendingRemoval, setItemPendingRemoval] =
     useState<ShoppingListItem | null>(null);
   const [itemPendingSectionChange, setItemPendingSectionChange] =
@@ -98,6 +108,7 @@ export function ShoppingListScreen() {
           const selectedMarket =
             markets.find((item) => item.id === activeMarketId) ?? fallbackMarket;
           const persistedList = await shoppingListRepository.getActive();
+          const allLists = await shoppingListRepository.getAll();
 
           if (!selectedMarket) {
             throw new Error("Nenhum supermercado cadastrado.");
@@ -107,7 +118,7 @@ export function ShoppingListScreen() {
             persistedList ??
             (await shoppingListRepository.createActive(
               selectedMarket.id,
-              "Compra da semana",
+              "Compras da semana",
             ));
 
           if (list.marketId !== selectedMarket.id) {
@@ -123,6 +134,9 @@ export function ShoppingListScreen() {
             return;
           }
 
+          setAvailableLists(
+            allLists.filter((currentList) => currentList.status !== "completed"),
+          );
           setMarket(selectedMarket);
           dispatch(setSelectedMarketId(selectedMarket.id));
           dispatch(setActiveList(list));
@@ -325,6 +339,159 @@ export function ShoppingListScreen() {
     }
   }
 
+  async function handleRequestSelectList() {
+    if (isSaving) {
+      return;
+    }
+
+    try {
+      const shoppingListRepository = await createShoppingListRepository();
+      const lists = await shoppingListRepository.getAll();
+      setAvailableLists(
+        lists.filter((currentList) => currentList.status !== "completed"),
+      );
+      setIsSelectListModalVisible(true);
+    } catch {
+      setScreenError("Não foi possível carregar suas listas.");
+    }
+  }
+
+  function handleCancelSelectList() {
+    if (isSaving) {
+      return;
+    }
+
+    setIsSelectListModalVisible(false);
+  }
+
+  async function handleConfirmSelectList(list: ShoppingList) {
+    if (isSaving || list.id === activeList?.id) {
+      setIsSelectListModalVisible(false);
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const shoppingListRepository = await createShoppingListRepository();
+      const marketRepository = await createMarketRepository();
+      const selectedList = await shoppingListRepository.setActive(list.id);
+      const selectedMarket = await marketRepository.getById(list.marketId);
+
+      if (!selectedList || !selectedMarket) {
+        throw new Error("Lista ou supermercado não encontrado.");
+      }
+
+      await marketRepository.setActiveMarketId(selectedMarket.id);
+      dispatch(setSelectedMarketId(selectedMarket.id));
+      dispatch(setActiveList(selectedList));
+      setMarket(selectedMarket);
+      setIsSelectListModalVisible(false);
+    } catch {
+      setScreenError("Não foi possível selecionar esta lista.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function handleRequestCreateList() {
+    if (isSaving) {
+      return;
+    }
+
+    setNewListName("");
+    setNewListError(null);
+    setIsCreateListModalVisible(true);
+  }
+
+  function handleCancelCreateList() {
+    if (isSaving) {
+      return;
+    }
+
+    setIsCreateListModalVisible(false);
+    setNewListName("");
+    setNewListError(null);
+  }
+
+  async function handleConfirmCreateList() {
+    if (!market || isSaving) {
+      return;
+    }
+
+    const trimmedName = newListName.trim();
+
+    if (!trimmedName) {
+      setNewListError("Informe um nome para a lista.");
+      return;
+    }
+
+    setIsSaving(true);
+    setNewListError(null);
+
+    try {
+      const shoppingListRepository = await createShoppingListRepository();
+      const newList = await shoppingListRepository.createActive(
+        market.id,
+        trimmedName,
+      );
+      dispatch(setActiveList(newList));
+      setAvailableLists((currentLists) => [
+        newList,
+        ...currentLists.filter((currentList) => currentList.id !== newList.id),
+      ]);
+      setIsCreateListModalVisible(false);
+      setNewListName("");
+    } catch {
+      setNewListError("Não foi possível criar a lista. Tente novamente.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function handleRequestCompleteList() {
+    if (!activeList || totalItems === 0 || isSaving) {
+      return;
+    }
+
+    setIsCompleteConfirmationVisible(true);
+  }
+
+  function handleCancelCompleteList() {
+    if (isSaving) {
+      return;
+    }
+
+    setIsCompleteConfirmationVisible(false);
+  }
+
+  async function handleConfirmCompleteList() {
+    if (!activeList || !market || isSaving) {
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const shoppingListRepository = await createShoppingListRepository();
+      await shoppingListRepository.completeList(activeList.id);
+      const newList = await shoppingListRepository.createActive(
+        market.id,
+        "Nova compra",
+      );
+      dispatch(setActiveList(newList));
+      setAvailableLists((currentLists) => [
+        newList,
+        ...currentLists.filter((currentList) => currentList.id !== activeList.id),
+      ]);
+      setProductError(null);
+      setProductName("");
+      setIsCompleteConfirmationVisible(false);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   function handleRequestClearList() {
     setIsClearConfirmationVisible(true);
   }
@@ -394,7 +561,7 @@ export function ShoppingListScreen() {
         <AppGradientHeader
           compact
           eyebrow="Lista ativa"
-          title="Compra da semana"
+          title={activeList.name}
           description={market.name}
         />
 
@@ -403,6 +570,47 @@ export function ShoppingListScreen() {
             <SummaryPill label="Pendentes" value={pendingItems} />
             <SummaryPill label="Comprados" value={purchasedItems} />
             <SummaryPill label="Total" value={totalItems} />
+          </View>
+
+          <View style={styles.activeListActions}>
+            <Pressable
+              onPress={handleRequestCreateList}
+              style={({ pressed }) => [
+                styles.listActionButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.listActionButtonText}>
+                Nova
+              </AppText>
+            </Pressable>
+
+            <Pressable
+              onPress={handleRequestSelectList}
+              style={({ pressed }) => [
+                styles.listActionButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.listActionButtonText}>
+                Trocar
+              </AppText>
+            </Pressable>
+
+            <Pressable
+              disabled={totalItems === 0 || isSaving}
+              onPress={handleRequestCompleteList}
+              style={({ pressed }) => [
+                styles.listActionButton,
+                styles.completeListButton,
+                totalItems === 0 || isSaving ? styles.disabledActionButton : null,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.completeListButtonText}>
+                Concluir
+              </AppText>
+            </Pressable>
           </View>
 
           <AppCard elevated style={styles.formCard}>
@@ -525,6 +733,37 @@ export function ShoppingListScreen() {
         onConfirm={handleConfirmClearList}
       />
 
+      <SelectShoppingListModal
+        visible={isSelectListModalVisible}
+        lists={availableLists}
+        activeListId={activeList.id}
+        onCancel={handleCancelSelectList}
+        onSelectList={handleConfirmSelectList}
+      />
+
+      <CreateShoppingListModal
+        visible={isCreateListModalVisible}
+        value={newListName}
+        error={newListError}
+        isSaving={isSaving}
+        onChangeValue={(value) => {
+          setNewListName(value);
+          if (newListError) {
+            setNewListError(null);
+          }
+        }}
+        onCancel={handleCancelCreateList}
+        onConfirm={handleConfirmCreateList}
+      />
+
+      <ConfirmCompleteListModal
+        visible={isCompleteConfirmationVisible}
+        listName={activeList.name}
+        totalItems={totalItems}
+        onCancel={handleCancelCompleteList}
+        onConfirm={handleConfirmCompleteList}
+      />
+
       <ConfirmRemoveItemModal
         visible={Boolean(itemPendingRemoval)}
         itemName={itemPendingRemoval?.name ?? ""}
@@ -581,6 +820,254 @@ function EmptyShoppingList() {
         banana, arroz, leite e detergente já serão agrupados por setor.
       </AppText>
     </AppCard>
+  );
+}
+
+interface SelectShoppingListModalProps {
+  visible: boolean;
+  lists: ShoppingList[];
+  activeListId: string;
+  onCancel: () => void;
+  onSelectList: (list: ShoppingList) => void;
+}
+
+function SelectShoppingListModal({
+  visible,
+  lists,
+  activeListId,
+  onCancel,
+  onSelectList,
+}: SelectShoppingListModalProps) {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  return (
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={onCancel}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalCard, styles.sectionModalCard]}>
+          <AppText variant="subtitle" style={styles.modalTitle}>
+            Trocar lista
+          </AppText>
+          <AppText muted style={styles.modalDescription}>
+            Escolha qual lista deseja continuar comprando.
+          </AppText>
+
+          <ScrollView
+            style={styles.sectionOptions}
+            contentContainerStyle={styles.sectionOptionsContent}
+          >
+            {lists.length === 0 ? (
+              <AppText muted>Nenhuma lista aberta encontrada.</AppText>
+            ) : null}
+
+            {lists.map((list) => {
+              const isSelected = list.id === activeListId;
+
+              return (
+                <Pressable
+                  key={list.id}
+                  onPress={() => onSelectList(list)}
+                  style={({ pressed }) => [
+                    styles.sectionOption,
+                    isSelected ? styles.sectionOptionSelected : null,
+                    pressed ? styles.pressed : null,
+                  ]}
+                >
+                  <View style={styles.sectionOptionTextContainer}>
+                    <AppText style={styles.sectionOptionName}>
+                      {list.name}
+                    </AppText>
+                    <AppText variant="caption" accent={isSelected} subtle={!isSelected}>
+                      {isSelected ? "Lista atual" : `${list.items.length} item${list.items.length === 1 ? "" : "s"}`}
+                    </AppText>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <View style={styles.modalActions}>
+            <Pressable
+              onPress={onCancel}
+              style={({ pressed }) => [
+                styles.modalButton,
+                styles.modalCancelButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.modalCancelText}>
+                Cancelar
+              </AppText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+interface CreateShoppingListModalProps {
+  visible: boolean;
+  value: string;
+  error: string | null;
+  isSaving: boolean;
+  onChangeValue: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function CreateShoppingListModal({
+  visible,
+  value,
+  error,
+  isSaving,
+  onChangeValue,
+  onCancel,
+  onConfirm,
+}: CreateShoppingListModalProps) {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  return (
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={onCancel}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <AppText variant="subtitle" style={styles.modalTitle}>
+            Nova lista
+          </AppText>
+          <AppText muted style={styles.modalDescription}>
+            Crie uma lista separada para uma compra específica. Ela usará o
+            supermercado selecionado no momento.
+          </AppText>
+
+          <TextInput
+            value={value}
+            onChangeText={onChangeValue}
+            placeholder="Ex.: Compras da semana"
+            placeholderTextColor={theme.colors.textSubtle}
+            style={[styles.input, styles.modalInput]}
+            returnKeyType="done"
+            onSubmitEditing={onConfirm}
+            autoCorrect={false}
+          />
+
+          {error ? (
+            <AppText variant="caption" style={styles.validationMessage}>
+              {error}
+            </AppText>
+          ) : null}
+
+          <View style={styles.modalActions}>
+            <Pressable
+              onPress={onCancel}
+              style={({ pressed }) => [
+                styles.modalButton,
+                styles.modalCancelButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.modalCancelText}>
+                Cancelar
+              </AppText>
+            </Pressable>
+
+            <Pressable
+              disabled={isSaving}
+              onPress={onConfirm}
+              style={({ pressed }) => [
+                styles.modalButton,
+                styles.modalPrimaryButton,
+                isSaving ? styles.disabledActionButton : null,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.modalPrimaryText}>
+                Criar lista
+              </AppText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+interface ConfirmCompleteListModalProps {
+  visible: boolean;
+  listName: string;
+  totalItems: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function ConfirmCompleteListModal({
+  visible,
+  listName,
+  totalItems,
+  onCancel,
+  onConfirm,
+}: ConfirmCompleteListModalProps) {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  return (
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={onCancel}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <AppText variant="subtitle" style={styles.modalTitle}>
+            Concluir compra?
+          </AppText>
+          <AppText muted style={styles.modalDescription}>
+            A lista "{listName}" será enviada para o histórico com {totalItems}
+            item{totalItems === 1 ? "" : "s"}. Em seguida, uma nova lista vazia
+            será criada automaticamente.
+          </AppText>
+
+          <View style={styles.modalActions}>
+            <Pressable
+              onPress={onCancel}
+              style={({ pressed }) => [
+                styles.modalButton,
+                styles.modalCancelButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.modalCancelText}>
+                Cancelar
+              </AppText>
+            </Pressable>
+
+            <Pressable
+              onPress={onConfirm}
+              style={({ pressed }) => [
+                styles.modalButton,
+                styles.modalPrimaryButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.modalPrimaryText}>
+                Concluir
+              </AppText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -943,6 +1430,33 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       marginTop: 2,
       fontWeight: "700",
     },
+    activeListActions: {
+      flexDirection: "row",
+      gap: theme.spacing.sm,
+    },
+    listActionButton: {
+      flex: 1,
+      minHeight: 44,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: theme.radius.lg,
+      backgroundColor: theme.colors.surfaceElevated,
+      paddingHorizontal: theme.spacing.md,
+    },
+    listActionButtonText: {
+      color: theme.colors.primaryStrong,
+      fontWeight: "900",
+    },
+    completeListButton: {
+      backgroundColor: theme.colors.primary,
+    },
+    completeListButtonText: {
+      color: theme.colors.primaryText,
+      fontWeight: "900",
+    },
+    disabledActionButton: {
+      opacity: 0.48,
+    },
     formCard: {
       padding: theme.spacing.xl,
     },
@@ -1178,6 +1692,16 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     },
     modalCancelButton: {
       backgroundColor: theme.colors.surfaceMuted,
+    },
+    modalPrimaryButton: {
+      backgroundColor: theme.colors.primary,
+    },
+    modalPrimaryText: {
+      color: theme.colors.primaryText,
+      fontWeight: "900",
+    },
+    modalInput: {
+      marginTop: theme.spacing.lg,
     },
     modalDangerButton: {
       backgroundColor: theme.mode === "dark" ? "#7F1D1D" : "#FEE2E2",

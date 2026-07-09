@@ -1,6 +1,14 @@
-import { StyleSheet, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../app/navigation/AppNavigator';
+import { useAppDispatch } from '../../app/store/hooks';
+import { setSelectedMarketId } from '../../app/store/slices/marketSlice';
+import { setActiveList } from '../../app/store/slices/shoppingListSlice';
+import { ShoppingList } from '../../domain/entities/ShoppingList';
+import { createMarketRepository } from '../../infrastructure/repositories/MarketRepositoryFactory';
+import { createShoppingListRepository } from '../../infrastructure/repositories/ShoppingListRepositoryFactory';
 import { AppActionCard } from '../components/AppActionCard';
 import { AppButton } from '../components/AppButton';
 import { AppCard } from '../components/AppCard';
@@ -12,8 +20,61 @@ import { useAppTheme } from '../components/useAppTheme';
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
 export function HomeScreen({ navigation }: Props) {
+  const dispatch = useAppDispatch();
+  const [history, setHistory] = useState<ShoppingList[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [reusingListId, setReusingListId] = useState<string | null>(null);
   const theme = useAppTheme();
   const styles = createStyles(theme);
+
+  const loadHistory = useCallback(async () => {
+    setIsLoadingHistory(true);
+    setHistoryError(null);
+
+    try {
+      const repository = await createShoppingListRepository();
+      const completedLists = await repository.getCompleted();
+      setHistory(completedLists.slice(0, 3));
+    } catch {
+      setHistoryError('Não foi possível carregar o histórico.');
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadHistory();
+    }, [loadHistory]),
+  );
+
+  async function handleReuseList(list: ShoppingList) {
+    if (reusingListId) {
+      return;
+    }
+
+    setReusingListId(list.id);
+    setHistoryError(null);
+
+    try {
+      const shoppingListRepository = await createShoppingListRepository();
+      const marketRepository = await createMarketRepository();
+      const reusedList = await shoppingListRepository.reuseListAsActive(
+        list.id,
+        `${list.name} - nova compra`,
+      );
+
+      await marketRepository.setActiveMarketId(reusedList.marketId);
+      dispatch(setSelectedMarketId(reusedList.marketId));
+      dispatch(setActiveList(reusedList));
+      navigation.navigate('ShoppingList');
+    } catch {
+      setHistoryError('Não foi possível reutilizar esta lista.');
+    } finally {
+      setReusingListId(null);
+    }
+  }
 
   return (
     <AppScreen scroll>
@@ -51,19 +112,95 @@ export function HomeScreen({ navigation }: Props) {
           />
         </View>
 
-        <View style={styles.infoBlock}>
-          <View style={styles.infoAccent} />
-          <View style={styles.infoText}>
-            <AppText variant="label" accent>Inteligência local</AppText>
-            <AppText variant="subtitle" style={styles.infoTitle}>Simples, rápido e útil.</AppText>
-            <AppText muted style={styles.infoDescription}>
-              A primeira versão usa regras locais para categorizar produtos. Nas próximas evoluções, o app poderá aprender com correções feitas por você.
-            </AppText>
+        <View style={styles.historyHeader}>
+          <View>
+            <AppText variant="label" accent>Histórico</AppText>
+            <AppText variant="subtitle" style={styles.historyTitle}>Listas concluídas</AppText>
           </View>
+          {isLoadingHistory ? <ActivityIndicator color={theme.colors.primary} /> : null}
         </View>
+
+        {historyError ? (
+          <AppCard elevated style={styles.errorCard}>
+            <AppText muted>{historyError}</AppText>
+          </AppCard>
+        ) : null}
+
+        {!isLoadingHistory && history.length === 0 ? (
+          <AppCard elevated style={styles.emptyHistoryCard}>
+            <AppText variant="subtitle">Nenhuma compra concluída ainda</AppText>
+            <AppText muted style={styles.emptyHistoryText}>
+              Quando você concluir uma compra, ela aparecerá aqui para consulta e reutilização futura.
+            </AppText>
+          </AppCard>
+        ) : null}
+
+        {history.map((list) => (
+          <HistoryListCard
+            key={list.id}
+            list={list}
+            isReusing={reusingListId === list.id}
+            onReuse={() => handleReuseList(list)}
+          />
+        ))}
       </View>
     </AppScreen>
   );
+}
+
+interface HistoryListCardProps {
+  list: ShoppingList;
+  isReusing: boolean;
+  onReuse: () => void;
+}
+
+function HistoryListCard({ list, isReusing, onReuse }: HistoryListCardProps) {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+  const completedDate = formatDate(list.completedAt ?? list.updatedAt);
+
+  return (
+    <AppCard elevated style={styles.historyCard}>
+      <View style={styles.historyCardContent}>
+        <View style={styles.historyTextContainer}>
+          <AppText variant="subtitle" style={styles.historyListName}>
+            {list.name}
+          </AppText>
+          <AppText muted style={styles.historyListMeta}>
+            Concluída em {completedDate} · {list.items.length} item{list.items.length === 1 ? '' : 's'}
+          </AppText>
+        </View>
+
+        <Pressable
+          disabled={isReusing}
+          onPress={onReuse}
+          style={({ pressed }) => [
+            styles.reuseButton,
+            isReusing ? styles.disabledButton : null,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <AppText variant="caption" style={styles.reuseButtonText}>
+            {isReusing ? '...' : 'Reutilizar'}
+          </AppText>
+        </Pressable>
+      </View>
+    </AppCard>
+  );
+}
+
+function formatDate(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'data não informada';
+  }
+
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
 }
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) {
@@ -97,31 +234,62 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       flexDirection: 'row',
       gap: theme.spacing.md,
     },
-    infoBlock: {
+    historyHeader: {
       flexDirection: 'row',
-      gap: theme.spacing.md,
-      backgroundColor: theme.colors.surfaceElevated,
-      borderRadius: theme.radius.lg,
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: theme.spacing.sm,
+    },
+    historyTitle: {
+      marginTop: theme.spacing.xs,
+    },
+    errorCard: {
       padding: theme.spacing.lg,
-      shadowColor: theme.colors.shadow,
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: theme.mode === 'dark' ? 0.16 : 0.07,
-      shadowRadius: 16,
-      elevation: 2,
     },
-    infoAccent: {
-      width: 4,
-      borderRadius: 4,
-      backgroundColor: theme.colors.primary,
+    emptyHistoryCard: {
+      padding: theme.spacing.xl,
     },
-    infoText: {
+    emptyHistoryText: {
+      marginTop: theme.spacing.sm,
+    },
+    historyCard: {
+      padding: 0,
+      overflow: 'hidden',
+    },
+    historyCardContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.md,
+      padding: theme.spacing.lg,
+    },
+    historyTextContainer: {
       flex: 1,
     },
-    infoTitle: {
-      marginTop: theme.spacing.sm,
+    historyListName: {
+      fontSize: 16,
+      lineHeight: 22,
     },
-    infoDescription: {
-      marginTop: theme.spacing.sm,
+    historyListMeta: {
+      marginTop: 4,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    reuseButton: {
+      minHeight: 40,
+      justifyContent: 'center',
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.colors.primarySoft,
+      paddingHorizontal: theme.spacing.md,
+    },
+    reuseButtonText: {
+      color: theme.colors.primaryStrong,
+      fontWeight: '900',
+    },
+    disabledButton: {
+      opacity: 0.48,
+    },
+    pressed: {
+      opacity: 0.72,
     },
   });
 }

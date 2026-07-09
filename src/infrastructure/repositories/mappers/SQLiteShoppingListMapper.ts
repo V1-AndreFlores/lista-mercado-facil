@@ -5,6 +5,8 @@ export interface ShoppingListRow {
   id: string;
   market_id: string;
   name: string;
+  status?: string | null;
+  completed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -42,6 +44,8 @@ export function mapShoppingListRow(row: ShoppingListRow, itemRows: ShoppingListI
     id: row.id,
     marketId: row.market_id,
     name: row.name,
+    status: row.status === 'completed' ? 'completed' : 'active',
+    completedAt: row.completed_at ?? undefined,
     items: itemRows.map(mapShoppingListItemRow),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
