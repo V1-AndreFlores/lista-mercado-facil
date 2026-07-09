@@ -2,6 +2,8 @@ import { Market } from '../../domain/entities/Market';
 import { MarketRepository } from '../../domain/repositories/MarketRepository';
 import { getDatabase } from '../database/database';
 
+const activeMarketMetadataKey = 'active_market_id';
+
 interface MarketRow {
   id: string;
   name: string;
@@ -59,6 +61,44 @@ export class SQLiteMarketRepository implements MarketRepository {
     return markets.find((market) => market.id === id) ?? null;
   }
 
+  async getActiveMarketId(): Promise<string | null> {
+    const database = await getDatabase();
+    const metadata = await database.getFirstAsync<{ value: string }>(
+      'SELECT value FROM app_metadata WHERE key = ? LIMIT 1',
+      [activeMarketMetadataKey],
+    );
+
+    const markets = await this.getAll();
+
+    if (metadata?.value && markets.some((market) => market.id === metadata.value)) {
+      return metadata.value;
+    }
+
+    const fallbackMarket = markets.find((market) => market.isDefault) ?? markets[0] ?? null;
+
+    if (!fallbackMarket) {
+      return null;
+    }
+
+    await this.setActiveMarketId(fallbackMarket.id);
+    return fallbackMarket.id;
+  }
+
+  async setActiveMarketId(id: string): Promise<void> {
+    const database = await getDatabase();
+    const market = await this.getById(id);
+
+    if (!market) {
+      throw new Error('Supermercado não encontrado.');
+    }
+
+    await database.runAsync(
+      `INSERT OR REPLACE INTO app_metadata (key, value)
+       VALUES (?, ?)`,
+      [activeMarketMetadataKey, id],
+    );
+  }
+
   async save(market: Market): Promise<void> {
     const database = await getDatabase();
     const now = new Date().toISOString();
@@ -100,5 +140,13 @@ export class SQLiteMarketRepository implements MarketRepository {
   async delete(id: string): Promise<void> {
     const database = await getDatabase();
     await database.runAsync('DELETE FROM markets WHERE id = ?', [id]);
+
+    const activeMarketId = await this.getActiveMarketId();
+    if (activeMarketId === id) {
+      const fallbackMarket = (await this.getAll())[0] ?? null;
+      if (fallbackMarket) {
+        await this.setActiveMarketId(fallbackMarket.id);
+      }
+    }
   }
 }

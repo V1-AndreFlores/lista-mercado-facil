@@ -92,31 +92,32 @@ export function ShoppingListScreen() {
           const marketRepository = await createMarketRepository();
           const shoppingListRepository = await createShoppingListRepository();
           const markets = await marketRepository.getAll();
-          const defaultMarket =
+          const activeMarketId = await marketRepository.getActiveMarketId();
+          const fallbackMarket =
             markets.find((item) => item.isDefault) ?? markets[0] ?? null;
+          const selectedMarket =
+            markets.find((item) => item.id === activeMarketId) ?? fallbackMarket;
           const persistedList = await shoppingListRepository.getActive();
 
-          if (!defaultMarket && !persistedList) {
+          if (!selectedMarket) {
             throw new Error("Nenhum supermercado cadastrado.");
           }
 
-          const selectedMarket = persistedList
-            ? (markets.find((item) => item.id === persistedList.marketId) ??
-              defaultMarket)
-            : defaultMarket;
-
-          if (!selectedMarket) {
-            throw new Error(
-              "Não foi possível identificar o supermercado da lista.",
-            );
-          }
-
-          const list =
+          let list =
             persistedList ??
             (await shoppingListRepository.createActive(
               selectedMarket.id,
               "Compra da semana",
             ));
+
+          if (list.marketId !== selectedMarket.id) {
+            list = {
+              ...list,
+              marketId: selectedMarket.id,
+              updatedAt: new Date().toISOString(),
+            };
+            await shoppingListRepository.update(list);
+          }
 
           if (!isMounted) {
             return;
@@ -432,7 +433,7 @@ export function ShoppingListScreen() {
 
             {isDuplicateProduct || productError ? (
               <AppText variant="caption" style={styles.validationMessage}>
-                Este produto já está na lista.
+                {productError ?? "Este produto já está na lista."}
               </AppText>
             ) : null}
 
