@@ -86,6 +86,15 @@ export class SQLiteMarketRepository implements MarketRepository {
       `UPDATE markets SET name = ?, address = ?, is_default = ?, updated_at = ? WHERE id = ?`,
       [market.name, market.address ?? null, market.isDefault ? 1 : 0, now, market.id],
     );
+
+    for (const section of market.sections) {
+      await database.runAsync(
+        `UPDATE market_sections
+         SET name = ?, route_order = ?, is_active = ?, updated_at = ?
+         WHERE id = ? AND market_id = ?`,
+        [section.name, section.routeOrder, section.isActive ? 1 : 0, now, section.id, market.id],
+      );
+    }
   }
 
   async delete(id: string): Promise<void> {

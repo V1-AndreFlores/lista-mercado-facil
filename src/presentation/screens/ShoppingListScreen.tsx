@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, Keyboard, Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { AddItemToShoppingListUseCase } from '../../domain/use-cases/AddItemToShoppingListUseCase';
 import { SortShoppingListByMarketRouteUseCase } from '../../domain/use-cases/SortShoppingListByMarketRouteUseCase';
@@ -53,61 +54,63 @@ export function ShoppingListScreen() {
   const isDuplicateProduct = activeList ? isProductAlreadyInList(activeList.items, trimmedProductName) : false;
   const canAddProduct = Boolean(trimmedProductName) && !isDuplicateProduct;
 
-  useEffect(() => {
-    let isMounted = true;
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
 
-    async function loadActiveShoppingList() {
-      setIsLoading(true);
-      setScreenError(null);
+      async function loadActiveShoppingList() {
+        setIsLoading(true);
+        setScreenError(null);
 
-      try {
-        const marketRepository = await createMarketRepository();
-        const shoppingListRepository = await createShoppingListRepository();
-        const markets = await marketRepository.getAll();
-        const defaultMarket = markets.find((item) => item.isDefault) ?? markets[0] ?? null;
-        const persistedList = await shoppingListRepository.getActive();
+        try {
+          const marketRepository = await createMarketRepository();
+          const shoppingListRepository = await createShoppingListRepository();
+          const markets = await marketRepository.getAll();
+          const defaultMarket = markets.find((item) => item.isDefault) ?? markets[0] ?? null;
+          const persistedList = await shoppingListRepository.getActive();
 
-        if (!defaultMarket && !persistedList) {
-          throw new Error('Nenhum supermercado cadastrado.');
-        }
+          if (!defaultMarket && !persistedList) {
+            throw new Error('Nenhum supermercado cadastrado.');
+          }
 
-        const selectedMarket = persistedList
-          ? markets.find((item) => item.id === persistedList.marketId) ?? defaultMarket
-          : defaultMarket;
+          const selectedMarket = persistedList
+            ? markets.find((item) => item.id === persistedList.marketId) ?? defaultMarket
+            : defaultMarket;
 
-        if (!selectedMarket) {
-          throw new Error('Não foi possível identificar o supermercado da lista.');
-        }
+          if (!selectedMarket) {
+            throw new Error('Não foi possível identificar o supermercado da lista.');
+          }
 
-        const list = persistedList ?? (await shoppingListRepository.createActive(selectedMarket.id, 'Compra da semana'));
+          const list = persistedList ?? (await shoppingListRepository.createActive(selectedMarket.id, 'Compra da semana'));
 
-        if (!isMounted) {
-          return;
-        }
+          if (!isMounted) {
+            return;
+          }
 
-        setMarket(selectedMarket);
-        dispatch(setSelectedMarketId(selectedMarket.id));
-        dispatch(setActiveList(list));
-      } catch (error) {
-        if (!isMounted) {
-          return;
-        }
+          setMarket(selectedMarket);
+          dispatch(setSelectedMarketId(selectedMarket.id));
+          dispatch(setActiveList(list));
+        } catch (error) {
+          if (!isMounted) {
+            return;
+          }
 
-        const message = error instanceof Error ? error.message : 'Não foi possível carregar a lista.';
-        setScreenError(message);
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
+          const message = error instanceof Error ? error.message : 'Não foi possível carregar a lista.';
+          setScreenError(message);
+        } finally {
+          if (isMounted) {
+            setIsLoading(false);
+          }
         }
       }
-    }
 
-    void loadActiveShoppingList();
+      void loadActiveShoppingList();
 
-    return () => {
-      isMounted = false;
-    };
-  }, [dispatch]);
+      return () => {
+        isMounted = false;
+      };
+    }, [dispatch]),
+  );
 
   function handleProductNameChange(value: string) {
     setProductName(value);
