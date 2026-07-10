@@ -102,13 +102,11 @@ export function ShoppingListScreen() {
     activeList?.items.filter((item) => item.isPurchased).length ?? 0;
   const pendingItems = totalItems - purchasedItems;
   const trimmedProductName = productName.trim();
-  const parsedProductQuantity = parseQuantityInput(productQuantity);
-  const isProductQuantityValid = parsedProductQuantity !== null;
+  const parsedProductQuantity = resolveQuantityInput(productQuantity);
   const isDuplicateProduct = activeList
     ? isProductAlreadyInList(activeList.items, trimmedProductName)
     : false;
-  const canAddProduct =
-    Boolean(trimmedProductName) && !isDuplicateProduct && isProductQuantityValid;
+  const canAddProduct = Boolean(trimmedProductName) && !isDuplicateProduct;
 
   useFocusEffect(
     useCallback(() => {
@@ -194,11 +192,15 @@ export function ShoppingListScreen() {
   }
 
   function handleProductQuantityChange(value: string) {
-    setProductQuantity(value);
+    setProductQuantity(sanitizeQuantityInput(value));
 
     if (productError) {
       setProductError(null);
     }
+  }
+
+  function handleProductQuantityBlur() {
+    setProductQuantity(formatQuantityValue(resolveQuantityInput(productQuantity)));
   }
 
   async function handleAddItem() {
@@ -211,12 +213,8 @@ export function ShoppingListScreen() {
       return;
     }
 
-    if (!isProductQuantityValid || parsedProductQuantity === null) {
-      setProductError("Informe uma quantidade válida.");
-      return;
-    }
-
     setIsSaving(true);
+    setProductQuantity(formatQuantityValue(parsedProductQuantity));
 
     try {
       const shoppingListRepository = await createShoppingListRepository();
@@ -395,19 +393,27 @@ export function ShoppingListScreen() {
     setQuantityEditError(null);
   }
 
+  function handleQuantityEditValueChange(value: string) {
+    setQuantityEditValue(sanitizeQuantityInput(value));
+
+    if (quantityEditError) {
+      setQuantityEditError(null);
+    }
+  }
+
+  function handleQuantityEditBlur() {
+    setQuantityEditValue(formatQuantityValue(resolveQuantityInput(quantityEditValue)));
+  }
+
   async function handleConfirmEditItemQuantity() {
     if (!itemPendingQuantityEdit || isSaving) {
       return;
     }
 
-    const parsedQuantity = parseQuantityInput(quantityEditValue);
-
-    if (parsedQuantity === null) {
-      setQuantityEditError("Informe uma quantidade válida.");
-      return;
-    }
+    const parsedQuantity = resolveQuantityInput(quantityEditValue);
 
     setIsSaving(true);
+    setQuantityEditValue(formatQuantityValue(parsedQuantity));
     setQuantityEditError(null);
 
     try {
@@ -873,8 +879,9 @@ export function ShoppingListScreen() {
                 placeholder="Quantidade"
                 placeholderTextColor={theme.colors.textSubtle}
                 style={[styles.input, styles.quantityInput]}
-                keyboardType="decimal-pad"
+                keyboardType="number-pad"
                 returnKeyType="done"
+                onBlur={handleProductQuantityBlur}
                 onSubmitEditing={handleAddItem}
               />
             </View>
@@ -1037,12 +1044,8 @@ export function ShoppingListScreen() {
         itemName={itemPendingQuantityEdit?.name ?? ""}
         quantityValue={quantityEditValue}
         error={quantityEditError}
-        onChangeQuantity={(value) => {
-          setQuantityEditValue(value);
-          if (quantityEditError) {
-            setQuantityEditError(null);
-          }
-        }}
+        onChangeQuantity={handleQuantityEditValueChange}
+        onBlurQuantity={handleQuantityEditBlur}
         onCancel={handleCancelEditItemQuantity}
         onConfirm={handleConfirmEditItemQuantity}
       />
@@ -1746,6 +1749,7 @@ interface EditItemQuantityModalProps {
   quantityValue: string;
   error: string | null;
   onChangeQuantity: (value: string) => void;
+  onBlurQuantity: () => void;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -1756,6 +1760,7 @@ function EditItemQuantityModal({
   quantityValue,
   error,
   onChangeQuantity,
+  onBlurQuantity,
   onCancel,
   onConfirm,
 }: EditItemQuantityModalProps) {
@@ -1785,8 +1790,9 @@ function EditItemQuantityModal({
               placeholder="1"
               placeholderTextColor={theme.colors.textSubtle}
               style={[styles.input, styles.modalQuantityInput]}
-              keyboardType="decimal-pad"
+              keyboardType="number-pad"
               returnKeyType="done"
+              onBlur={onBlurQuantity}
               onSubmitEditing={onConfirm}
             />
           </View>
@@ -1936,24 +1942,32 @@ function ShoppingItemRow({
   );
 }
 
-function parseQuantityInput(rawValue: string): number | null {
-  const normalizedValue = rawValue.trim().replace(",", ".");
+function sanitizeQuantityInput(rawValue: string): string {
+  return rawValue.replace(/\D/g, "");
+}
 
-  if (!normalizedValue) {
+function resolveQuantityInput(rawValue: string): number {
+  const sanitizedValue = sanitizeQuantityInput(rawValue);
+
+  if (!sanitizedValue) {
     return 1;
   }
 
-  const parsedValue = Number(normalizedValue);
+  const parsedValue = Number.parseInt(sanitizedValue, 10);
 
-  if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
-    return null;
+  if (!Number.isFinite(parsedValue) || parsedValue < 1) {
+    return 1;
   }
 
   return parsedValue;
 }
 
 function formatQuantityValue(quantity: number): string {
-  return Number.isInteger(quantity) ? String(quantity) : String(quantity).replace(".", ",");
+  if (!Number.isFinite(quantity) || quantity < 1) {
+    return defaultProductQuantity;
+  }
+
+  return String(Math.trunc(quantity));
 }
 
 function formatItemName(item: ShoppingListItem): string {
