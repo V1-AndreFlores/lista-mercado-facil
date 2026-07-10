@@ -2,7 +2,7 @@
 
 Aplicativo mobile para criação e organização inteligente de listas de compras de supermercado.
 
-A proposta do projeto é resolver um problema comum: depois de montar uma lista de compras, ainda é necessário reorganizar mentalmente os itens conforme os setores do supermercado. O **Lista de Mercado Fácil** busca reduzir esse atrito agrupando e ordenando os produtos por setores, permitindo que a compra siga uma rota mais prática, simples e eficiente.
+A proposta do projeto é resolver um problema comum: depois de montar uma lista de compras, ainda é necessário reorganizar mentalmente os itens conforme os corredores do supermercado. O **Lista de Mercado Fácil** reduz esse atrito agrupando os produtos por corredores e ordenando a lista conforme a rota configurada para cada mercado.
 
 O aplicativo é uma iniciativa pessoal, gratuita, sem anúncios, sem login obrigatório e sem dependência de serviços pagos para sua função principal. A ideia é criar algo útil para uso próprio e também compartilhar com outras pessoas.
 
@@ -13,18 +13,19 @@ O aplicativo é uma iniciativa pessoal, gratuita, sem anúncios, sem login obrig
 Criar um aplicativo mobile offline-first que permita:
 
 - montar listas de compras rapidamente;
-- organizar os itens por setor do supermercado;
-- manter supermercados cadastrados com ordem própria de setores;
-- permitir que o usuário personalize a organização conforme sua realidade;
+- organizar os itens por corredor/setor do supermercado;
+- manter supermercados cadastrados com ordem própria de corredores;
+- manter uma lista de **Corredores padrão** usada como base para novos supermercados;
+- permitir que o usuário personalize a organização conforme a realidade de cada mercado;
 - funcionar sem internet para as funcionalidades principais;
 - evoluir com aprendizado local a partir das correções feitas pelo usuário;
-- manter uma experiência simples, bonita, moderna e user friendly.
+- manter uma experiência simples, moderna, profissional e mobile-first.
 
 ---
 
 ## Problema que o app resolve
 
-Em muitos aplicativos de lista de compras, o usuário adiciona os produtos em qualquer ordem e depois precisa reorganizar a compra durante o percurso no mercado.
+Em muitos aplicativos de lista de compras, o usuário adiciona os produtos em qualquer ordem e precisa reorganizar mentalmente a compra durante o percurso no mercado.
 
 Exemplo de lista comum:
 
@@ -38,7 +39,7 @@ Papel higiênico
 Café
 ```
 
-O aplicativo deve transformar essa lista em algo mais útil:
+O aplicativo transforma essa lista em uma rota mais útil:
 
 ```text
 Hortifruti
@@ -51,17 +52,17 @@ Mercearia
 - Arroz
 - Café
 
-Frios e Laticínios
+Frios e laticínios
 - Leite
 
 Limpeza
 - Detergente
 
-Higiene
+Higiene pessoal
 - Papel higiênico
 ```
 
-Com isso, o usuário evita ficar indo e voltando pelos corredores do supermercado.
+Com isso, o usuário evita ir e voltar pelos corredores do supermercado.
 
 ---
 
@@ -73,41 +74,73 @@ Com isso, o usuário evita ficar indo e voltando pelos corredores do supermercad
 - Sem login obrigatório no MVP.
 - Funcionamento offline-first.
 - Baixa dependência de serviços externos.
-- Interface simples e agradável.
+- Interface simples, moderna e agradável.
 - Código limpo e organizado.
 - Arquitetura preparada para evolução.
-- Testes desde as primeiras funcionalidades.
 - Persistência local dos dados principais.
+- Respeito à privacidade do usuário.
 
 ---
 
 ## Status atual
 
-Projeto em desenvolvimento inicial.
+Projeto em desenvolvimento ativo.
 
-### Já definido
+### Já implementado
 
-- Nome do app: **Lista de Mercado Fácil**.
-- Nome do repositório: `lista-mercado-facil`.
-- Stack principal: React Native, Expo e TypeScript.
-- Banco local: SQLite.
-- Preferências simples: AsyncStorage.
-- Estado global: Redux Toolkit.
-- Arquitetura: Clean Architecture adaptada para mobile.
-- Tema claro e escuro.
+- Projeto rodando com Expo.
+- TypeScript configurado.
+- Tema claro e tema escuro.
 - Tema salvo localmente.
 - Interface mobile-first.
-- Navegação inferior.
-- Supermercado inicial via seed editável: **Zaffari Fernandes Vieira**.
-
-### Em implementação
-
-- Primeira versão funcional da lista de compras.
-- Adição de itens.
-- Categorização local por regras.
-- Agrupamento por setores.
-- Marcar item como comprado.
-- Remover item da lista.
+- Navegação principal com telas:
+  - Início;
+  - Lista;
+  - Mercados;
+  - Ajustes.
+- Splash screen personalizada com identidade azul/ciano.
+- Splash screen exibida ao abrir o app.
+- Splash com imagem de fundo, nome do app, texto de carregamento e loading animado.
+- Tempo mínimo de splash configurado para 3 segundos.
+- Fluxo inicial preparado para executar rotinas de abertura do app.
+- Tela Lista com:
+  - criação de lista;
+  - troca de lista;
+  - edição do nome da lista;
+  - nome padrão "Compra do dia" quando o usuário não informa nome;
+  - conclusão de compra;
+  - adição de produtos;
+  - quantidade simples;
+  - bloqueio de produto repetido;
+  - marcação de produto como comprado;
+  - remoção de produto com confirmação;
+  - limpeza da lista com confirmação;
+  - alteração do corredor/setor do produto;
+  - aprendizado local de preferência de corredor.
+- Tela Mercados com:
+  - cadastro de supermercado;
+  - edição de nome;
+  - seleção de mercado ativo;
+  - reordenação de corredores do mercado;
+  - edição, inclusão e exclusão de corredores do mercado;
+  - edição, inclusão, exclusão e reordenação de Corredores padrão;
+  - cópia dos Corredores padrão ao criar novo supermercado.
+- Histórico na tela Início com:
+  - listas concluídas;
+  - reutilização de lista;
+  - exclusão de histórico;
+  - exibição de data;
+  - exibição de hora e minuto;
+  - exibição do nome do supermercado.
+- Tela Ajustes com:
+  - alternância entre tema claro e escuro;
+  - switch customizado com padrão visual azul/ciano;
+  - configuração de retenção do histórico:
+    - Sempre;
+    - Últimos 30 dias;
+    - Últimos 60 dias;
+    - Últimos 90 dias.
+- Limpeza do histórico preparada para execução durante a abertura do app, conforme configuração de retenção.
 
 ---
 
@@ -179,44 +212,57 @@ O Expo foi escolhido para acelerar o desenvolvimento, facilitar testes em dispos
 
 ### TypeScript
 
-O TypeScript será usado como linguagem principal para melhorar previsibilidade, segurança de tipos e manutenção do código.
+O TypeScript é usado como linguagem principal para melhorar previsibilidade, segurança de tipos e manutenção do código.
 
-### SQLite
+### Persistência local
 
-O SQLite será usado para armazenar dados principais do aplicativo, como:
+O projeto trabalha com abordagem offline-first.
+
+Direção da persistência:
+
+- AsyncStorage para Web/local e preferências simples;
+- SQLite para Android/iOS na evolução da camada de infraestrutura;
+- repositórios isolados para reduzir acoplamento entre interface e persistência.
+
+Dados locais principais:
 
 - supermercados;
-- setores;
+- corredores do mercado;
+- Corredores padrão;
 - listas;
 - itens;
 - histórico;
-- preferências aprendidas pelo app.
+- preferências aprendidas pelo app;
+- configurações.
 
 ### AsyncStorage
 
-O AsyncStorage será usado apenas para preferências simples, como:
+O AsyncStorage é usado para preferências simples e persistência local no ambiente Web/local, como:
 
 - tema selecionado;
-- último supermercado selecionado;
-- flags simples de configuração.
+- mercado ativo;
+- listas locais;
+- configurações;
+- retenção de histórico;
+- Corredores padrão.
 
 ### Redux Toolkit
 
-O Redux Toolkit será usado para estado global previsível e testável, principalmente em:
+O Redux Toolkit é usado para estado global previsível e testável, principalmente em:
 
 - tema atual;
-- lista em edição;
+- lista ativa;
 - supermercado selecionado;
-- estado visual de telas;
+- estado compartilhado entre telas;
 - futuras sincronizações.
 
 ### Clean Architecture
 
-A arquitetura será separada em camadas para evitar acoplamento entre regra de negócio, interface e infraestrutura.
+A arquitetura é separada em camadas para evitar acoplamento entre regra de negócio, interface e infraestrutura.
 
 ---
 
-## Arquitetura proposta
+## Arquitetura do projeto
 
 ```text
 src/
@@ -227,33 +273,27 @@ src/
     theme/
 
   domain/
+    constants/
     entities/
     repositories/
     services/
     use-cases/
-    value-objects/
 
   application/
-    dtos/
-    mappers/
+    services/
     state/
 
   infrastructure/
-    database/
     repositories/
     seed/
-    services/
 
   presentation/
+    assets/
     components/
-    hooks/
     screens/
-    view-models/
 
   shared/
     constants/
-    errors/
-    types/
     utils/
 ```
 
@@ -275,13 +315,16 @@ Responsável pela configuração da aplicação:
 
 Camada de regra de negócio pura.
 
-Deve conter:
+Contém:
 
 - entidades;
 - contratos de repositórios;
 - serviços de domínio;
 - casos de uso;
-- regras de categorização e ordenação.
+- regras de categorização;
+- regras de ordenação;
+- regras de criação de mercados;
+- normalização de texto.
 
 Essa camada não deve depender de React Native, SQLite, Redux ou navegação.
 
@@ -291,40 +334,39 @@ Camada de orquestração entre domínio e interface.
 
 Pode conter:
 
-- DTOs;
-- mappers;
-- slices Redux;
+- serviços de inicialização;
 - comandos;
 - queries;
+- slices Redux;
 - adaptação de dados para tela.
 
 ### infrastructure
 
 Camada de detalhes técnicos.
 
-Deve conter:
+Contém:
 
-- acesso ao SQLite;
 - implementação dos repositórios;
+- persistência local;
 - seeds iniciais;
-- serviços locais;
-- futura integração com APIs.
+- futura integração com SQLite nativo;
+- futura integração com APIs, se necessário.
 
 ### presentation
 
 Camada de interface.
 
-Deve conter:
+Contém:
 
 - telas;
 - componentes reutilizáveis;
-- hooks de tela;
-- view models;
-- estilos conectados ao tema.
+- assets visuais;
+- estilos conectados ao tema;
+- componentes mobile-first.
 
 ---
 
-## Entidades principais previstas
+## Entidades principais
 
 ```text
 Market
@@ -332,9 +374,9 @@ MarketSection
 ShoppingList
 ShoppingListItem
 ProductCategory
-ProductSuggestion
 UserProductPreference
 PurchaseHistory
+AppSettings
 ```
 
 ### Market
@@ -344,22 +386,25 @@ Representa um supermercado cadastrado pelo usuário.
 Exemplos:
 
 - Zaffari Fernandes Vieira
-- Outro supermercado cadastrado manualmente
+- Mercado do bairro
+- Supermercado cadastrado manualmente
 
 ### MarketSection
 
-Representa um setor/corredor de um supermercado.
+Representa um corredor/setor de um supermercado.
 
 Exemplos:
 
 - Hortifruti
 - Padaria
 - Açougue
-- Frios e Laticínios
+- Peixaria
+- Frios e laticínios
+- Congelados
 - Mercearia
 - Bebidas
+- Higiene pessoal
 - Limpeza
-- Higiene
 - Pet
 - Utilidades
 - Outros
@@ -368,54 +413,240 @@ Exemplos:
 
 Representa uma lista de compras.
 
+Cada lista pertence a um supermercado.
+
 ### ShoppingListItem
 
 Representa um item dentro de uma lista.
 
+Cada item possui:
+
+- nome;
+- nome normalizado;
+- quantidade;
+- unidade;
+- corredor/setor;
+- status de comprado;
+- datas de criação e atualização.
+
 ### UserProductPreference
 
-Representa uma correção ou preferência do usuário.
+Representa uma correção ou preferência local do usuário.
 
 Exemplo:
 
-Se o app classificar “queijo” como Mercearia, mas o usuário corrigir para Frios e Laticínios, essa preferência poderá ser salva localmente para melhorar futuras classificações.
+Se o app classificar “queijo” como Mercearia, mas o usuário corrigir para Frios e laticínios, essa preferência pode ser salva localmente para melhorar futuras classificações.
+
+### AppSettings
+
+Representa configurações locais do app.
+
+Exemplos:
+
+- tema;
+- retenção do histórico;
+- futuras preferências de comportamento.
+
+---
+
+## Splash screen e inicialização
+
+O app possui uma splash screen personalizada em tons de azul/ciano.
+
+A splash apresenta:
+
+- fundo visual alinhado à identidade do app;
+- carrinho de compras branco;
+- nome **Lista de Mercado Fácil**;
+- texto **Preparando sua lista...**;
+- três bolinhas animadas de carregamento.
+
+Regras atuais:
+
+- a splash aparece sempre ao abrir o app;
+- o tempo mínimo de exibição é de 3 segundos;
+- a tela é implementada como uma screen React Native;
+- a splash também serve como ponto para rotinas de inicialização;
+- se uma rotina de inicialização falhar, o app segue para a tela principal e tenta novamente na próxima abertura.
+
+Rotinas previstas ou preparadas para a inicialização:
+
+- carregar configurações;
+- carregar tema;
+- aplicar retenção de histórico;
+- garantir dados padrão;
+- validar integridade dos Corredores padrão.
+
+---
+
+## Supermercados e corredores
+
+O app trabalha com dois níveis de corredores.
+
+### Corredores padrão
+
+São a lista base usada quando um novo supermercado é criado.
+
+Regras:
+
+- ficam disponíveis na tela Mercados;
+- podem ser incluídos;
+- podem ser editados;
+- podem ser excluídos;
+- podem ser reordenados;
+- não permitem nomes duplicados;
+- não permitem excluir o último corredor;
+- a exclusão exige confirmação;
+- alterações nos Corredores padrão não alteram supermercados já existentes.
+
+### Corredores do mercado
+
+São os corredores específicos de um supermercado cadastrado.
+
+Regras:
+
+- cada supermercado possui sua própria lista;
+- podem ser incluídos;
+- podem ser editados;
+- podem ser excluídos;
+- podem ser reordenados;
+- não permitem nomes duplicados;
+- não permitem excluir o último corredor;
+- a exclusão exige confirmação;
+- alterações afetam somente o supermercado editado.
+
+### Criação de novo supermercado
+
+Ao criar um novo supermercado:
+
+- o app copia os Corredores padrão atuais;
+- a cópia fica independente;
+- alterações futuras nos Corredores padrão não afetam esse supermercado;
+- alterações futuras no supermercado não afetam os Corredores padrão.
+
+### Normalização e sugestão de nomes
+
+O app bloqueia duplicidade de corredores ignorando:
+
+- letras maiúsculas/minúsculas;
+- acentuação;
+- espaços extras.
+
+Exemplos considerados equivalentes:
+
+```text
+Açougue
+acougue
+AÇOUGUE
+ açougue 
+```
+
+Quando o usuário digita um nome sem acento ou com grafia diferente de um corredor conhecido, o app pode sugerir o nome mais adequado.
+
+Exemplos:
+
+```text
+acougue -> Açougue
+frios e laticinios -> Frios e laticínios
+higiene pessoal -> Higiene pessoal
+```
+
+A sugestão deve ser apresentada para o usuário confirmar, sem correção automática obrigatória.
 
 ---
 
 ## Supermercado inicial
 
-O projeto terá um supermercado inicial cadastrado por seed:
+O projeto possui um supermercado inicial cadastrado por seed:
 
 ```text
 Zaffari Fernandes Vieira
 ```
 
-Importante: essa informação não deve ser fixa no código da interface. Ela deve existir como dado inicial no banco local e poderá ser editada pelo usuário futuramente.
+Esse mercado existe como dado inicial local e pode ser editado pelo usuário.
 
 ---
 
-## Setores iniciais sugeridos
+## Corredores iniciais
+
+A lista inicial de corredores usada pelo app é:
 
 ```text
 Hortifruti
 Padaria
 Açougue
 Peixaria
-Frios e Laticínios
+Frios e laticínios
 Congelados
 Mercearia
-Massas e Grãos
-Enlatados e Conservas
 Bebidas
-Higiene
+Higiene pessoal
 Limpeza
 Pet
 Utilidades
 Outros
-Caixa
 ```
 
-A ordem dos setores deve ser configurável por supermercado.
+A ordem dos corredores pode ser configurada nos Corredores padrão e também em cada supermercado.
+
+---
+
+## Lista de compras
+
+A tela Lista permite:
+
+- criar nova lista;
+- usar nome padrão quando o nome não for informado;
+- editar nome da lista;
+- trocar entre listas abertas;
+- adicionar produtos;
+- informar quantidade simples;
+- bloquear produtos repetidos;
+- classificar produto por corredor/setor;
+- agrupar itens por corredor;
+- ordenar os grupos conforme a rota do supermercado ativo;
+- marcar item como comprado;
+- editar quantidade;
+- trocar o corredor do item;
+- remover item com confirmação;
+- limpar a lista com confirmação;
+- concluir a compra.
+
+---
+
+## Histórico
+
+O histórico é formado por listas concluídas.
+
+A tela Início exibe:
+
+- nome da lista;
+- data de conclusão;
+- hora e minuto de conclusão;
+- nome do supermercado;
+- quantidade de itens;
+- opção de reutilizar uma lista;
+- opção de apagar histórico.
+
+### Retenção do histórico
+
+O app possui configuração de retenção:
+
+```text
+Sempre
+Últimos 30 dias
+Últimos 60 dias
+Últimos 90 dias
+```
+
+Regras:
+
+- **Sempre** mantém todo o histórico;
+- **Últimos 30 dias** remove históricos anteriores a 30 dias;
+- **Últimos 60 dias** remove históricos anteriores a 60 dias;
+- **Últimos 90 dias** remove históricos anteriores a 90 dias;
+- a limpeza é aplicada na próxima abertura do app;
+- se a limpeza falhar, o app não bloqueia o usuário e tenta novamente na próxima abertura.
 
 ---
 
@@ -423,24 +654,23 @@ A ordem dos setores deve ser configurável por supermercado.
 
 A primeira versão não depende de IA generativa.
 
-A organização inteligente será baseada em:
+A organização inteligente é baseada em:
 
 - dicionário local de produtos;
 - palavras-chave;
 - sinônimos;
-- regras simples;
-- setor padrão;
-- preferências corrigidas pelo usuário;
-- ordem dos setores do supermercado selecionado.
+- corredor padrão;
+- preferência local corrigida pelo usuário;
+- ordem dos corredores do supermercado ativo.
 
 ### Exemplo de categorização
 
 ```text
 banana -> Hortifruti
 arroz -> Mercearia
-leite -> Frios e Laticínios
+leite -> Frios e laticínios
 detergente -> Limpeza
-sabonete -> Higiene
+sabonete -> Higiene pessoal
 ração -> Pet
 ```
 
@@ -480,7 +710,7 @@ Guardanapo
 Sal grosso
 ```
 
-Porém, por decisão de projeto, o app deve continuar funcionando sem internet, sem IA e sem serviços pagos.
+Por decisão de projeto, o app deve continuar funcionando sem internet, sem IA e sem serviços pagos.
 
 ---
 
@@ -511,40 +741,87 @@ Direção visual:
 
 ### Persistência do tema
 
-O tema selecionado pelo usuário deve ser salvo localmente com AsyncStorage.
+O tema selecionado pelo usuário é salvo localmente.
 
-Ao fechar e abrir o app novamente, o tema escolhido deve ser mantido.
+Ao fechar e abrir o app novamente, o tema escolhido é mantido.
+
+### Switch de tema
+
+O switch de tema escuro usa componente customizado `AppThemeSwitch`, seguindo o padrão visual azul/ciano do app.
+
+---
+
+## Navegação
+
+O app usa navegação com telas principais:
+
+```text
+Splash
+Início
+Lista
+Mercados
+Ajustes
+```
+
+A interface principal usa navegação inferior customizada.
+
+A splash é a tela inicial do fluxo e redireciona para a tela Início após concluir o carregamento mínimo e executar as rotinas de inicialização.
 
 ---
 
 ## Funcionalidades do MVP
 
-### Tela inicial
+### Splash
 
-- Apresentar o aplicativo.
-- Permitir acesso rápido à lista.
-- Permitir acesso aos supermercados.
-- Permitir acesso às configurações.
+- Exibir identidade visual do app.
+- Executar rotinas de abertura.
+- Preparar o app antes da tela principal.
+- Manter loading animado.
 
-### Tela de lista
+### Tela Início
 
+- Exibir resumo do app.
+- Exibir histórico de compras concluídas.
+- Reutilizar lista concluída.
+- Apagar histórico.
+- Mostrar nome do mercado, data e hora da compra.
+
+### Tela Lista
+
+- Criar lista.
+- Editar nome da lista.
+- Trocar lista ativa.
 - Adicionar item.
-- Classificar item por setor.
-- Agrupar itens por setor.
+- Classificar item por corredor.
+- Agrupar itens por corredor.
+- Ordenar grupos conforme o mercado ativo.
 - Marcar item como comprado.
+- Editar quantidade.
+- Alterar corredor de um item.
 - Remover item.
-- Exibir itens comprados de forma visualmente diferente.
+- Limpar lista.
+- Concluir compra.
 
-### Tela de supermercados
+### Tela Mercados
 
 - Exibir supermercados cadastrados.
-- Exibir supermercado inicial vindo do seed.
-- Preparar edição futura de ordem dos setores.
+- Criar novo supermercado.
+- Editar nome do supermercado.
+- Selecionar mercado ativo.
+- Editar Corredores padrão.
+- Editar Corredores do mercado.
+- Incluir corredor.
+- Editar corredor.
+- Excluir corredor com confirmação.
+- Reordenar corredores.
+- Bloquear duplicidade de nomes.
+- Sugerir nome corrigido quando aplicável.
 
-### Tela de configurações
+### Tela Ajustes
 
 - Alternar tema claro/escuro.
-- Persistir preferência localmente.
+- Configurar retenção do histórico.
+- Informar que a retenção será aplicada na próxima abertura do app.
 
 ---
 
@@ -560,55 +837,74 @@ Ao fechar e abrir o app novamente, o tema escolhido deve ser mantido.
 - Criar layout mobile-first.
 - Criar README inicial.
 
+Status: concluído.
+
 ### Fase 2: Lista funcional
 
 - Adicionar itens à lista.
 - Classificar itens por regras locais.
-- Agrupar itens por setor.
+- Agrupar itens por corredor.
 - Marcar item como comprado.
 - Remover item.
-- Melhorar experiência da tela de lista.
+- Limpar lista.
+- Concluir compra.
+- Editar nome da lista.
+- Trocar lista ativa.
 
-### Fase 3: Persistência com SQLite
+Status: implementado em evolução.
 
-- Criar tabelas locais.
-- Persistir supermercados.
-- Persistir setores.
-- Persistir listas.
-- Persistir itens.
-- Criar seed inicial.
-- Carregar dados ao abrir o app.
-
-### Fase 4: Supermercados personalizados
+### Fase 3: Supermercados personalizados
 
 - Criar supermercado.
 - Editar supermercado.
-- Reordenar setores.
-- Definir supermercado padrão.
+- Selecionar supermercado ativo.
+- Reordenar corredores.
+- Editar Corredores padrão.
+- Editar Corredores do mercado.
 - Criar lista associada a supermercado.
 
-### Fase 5: Aprendizado local
+Status: implementado em evolução.
 
-- Salvar correções de categoria feitas pelo usuário.
+### Fase 4: Histórico e retenção
+
+- Salvar listas concluídas.
+- Exibir histórico.
+- Reutilizar lista.
+- Apagar histórico.
+- Configurar retenção.
+- Aplicar limpeza na abertura do app.
+
+Status: implementado em evolução.
+
+### Fase 5: Persistência com SQLite
+
+- Consolidar camada SQLite para Android/iOS.
+- Manter compatibilidade com Web/local.
+- Criar migrações locais.
+- Criar estratégia de evolução de schema.
+
+Status: planejado/em evolução.
+
+### Fase 6: Aprendizado local
+
+- Salvar correções de corredor feitas pelo usuário.
 - Priorizar preferências do usuário na categorização.
-- Sugerir categoria com base no histórico.
+- Sugerir corredor com base no histórico.
 - Sugerir itens frequentes.
 
-### Fase 6: Histórico
-
-- Salvar listas anteriores.
-- Reutilizar listas.
-- Recomprar itens frequentes.
-- Criar listas recorrentes.
+Status: parcialmente implementado.
 
 ### Fase 7: Preparação para publicação
 
-- Criar ícone do app.
-- Criar splash screen.
+- Criar ícone final do app.
+- Consolidar splash nativa do Expo.
 - Revisar acessibilidade.
 - Revisar textos.
 - Gerar build Android.
 - Preparar screenshots para Google Play.
+- Preparar política de privacidade.
+
+Status: futuro.
 
 ### Fase 8: Recursos futuros
 
@@ -618,6 +914,8 @@ Ao fechar e abrir o app novamente, o tema escolhido deve ser mantido.
 - Backup opcional.
 - Sincronização opcional.
 - IA generativa opcional.
+
+Status: futuro.
 
 ---
 
@@ -641,16 +939,10 @@ Instale as dependências:
 npm install
 ```
 
-Caso o projeto precise da dependência de gradiente:
-
-```bash
-npx expo install expo-linear-gradient
-```
-
 Caso precise instalar dependências Expo específicas:
 
 ```bash
-npx expo install expo-sqlite @react-native-async-storage/async-storage react-native-screens react-native-safe-area-context
+npx expo install expo-linear-gradient expo-sqlite @react-native-async-storage/async-storage react-native-screens react-native-safe-area-context
 ```
 
 ---
@@ -689,7 +981,7 @@ Abra o Expo Go e escaneie o QR Code exibido no terminal.
 
 ---
 
-## Scripts previstos
+## Scripts
 
 ```json
 {
@@ -706,15 +998,21 @@ Abra o Expo Go e escaneie o QR Code exibido no terminal.
 
 ## Testes
 
-O projeto deve ter testes unitários desde as primeiras regras de negócio.
+O projeto deve ter testes unitários para as principais regras de negócio.
 
 Prioridades de teste:
 
 - categorização de produtos;
-- agrupamento por setor;
+- agrupamento por corredor;
 - ordenação conforme supermercado;
 - marcação de item como comprado;
 - preferências de usuário;
+- retenção do histórico;
+- criação de novo supermercado com Corredores padrão;
+- edição de Corredores padrão;
+- edição de Corredores do mercado;
+- bloqueio de nomes duplicados;
+- sugestão de nomes com acentuação;
 - reducers Redux;
 - use cases de domínio.
 
@@ -722,9 +1020,12 @@ Exemplo de regras a testar:
 
 ```text
 banana deve ser classificada como Hortifruti
-leite deve ser classificado como Frios e Laticínios
+leite deve ser classificado como Frios e laticínios
 produto desconhecido deve ser classificado como Outros
 itens comprados devem ser exibidos após os pendentes
+novo supermercado deve copiar os Corredores padrão atuais
+não deve permitir corredor duplicado ignorando acentuação
+não deve permitir excluir o último corredor
 ```
 
 Executar testes:
@@ -747,7 +1048,9 @@ O projeto deve seguir:
 - componentes reutilizáveis;
 - regras de domínio fora da interface;
 - baixa dependência entre camadas;
-- testes para regras relevantes.
+- testes para regras relevantes;
+- componentes visuais reutilizáveis;
+- estilos consistentes com o tema.
 
 ---
 
@@ -761,8 +1064,8 @@ fix: correção de bug
 style: ajuste visual
 refactor: refatoração sem mudança funcional
 test: testes
-chore: configuração ou manutenção
 docs: documentação
+chore: configuração ou manutenção
 ```
 
 Exemplos:
@@ -776,7 +1079,7 @@ git add . && git commit -m "style: ajusta identidade visual mobile-first" && git
 ```
 
 ```bash
-git add . && git commit -m "docs: restaura README completo do projeto" && git push
+git add . && git commit -m "docs: atualiza README do projeto" && git push
 ```
 
 ---
@@ -793,6 +1096,12 @@ git push
 ```
 
 Antes de alterações grandes, recomenda-se commitar o estado atual para facilitar rollback.
+
+Linha sugerida para esta atualização de documentação:
+
+```bash
+git add README.md && git commit -m "docs: atualiza README com funcionalidades recentes" && git push
+```
 
 ---
 
@@ -835,6 +1144,7 @@ A publicação futura na Google Play deve considerar:
 - descrição completa;
 - screenshots;
 - ícone;
+- splash screen;
 - política de privacidade;
 - classificação indicativa;
 - ausência de anúncios;
@@ -880,4 +1190,3 @@ Sugestão futura: avaliar uma licença open source permissiva, como MIT, caso o 
 ## Autor
 
 Projeto criado por André Flores como iniciativa pessoal para resolver uma necessidade prática no dia a dia e compartilhar uma solução gratuita, simples e útil com outras pessoas.
-
