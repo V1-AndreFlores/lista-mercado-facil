@@ -1,15 +1,20 @@
 {
-  "plugins": [
-    "expo-sqlite"
-  ],
-  "extra": {
-    "eas": {
-      "projectId": "4c4ca9bc-ec07-4190-896b-cbcac2a91b73"
-    }
-  },
   "expo": {
+    "name": "Lista de Mercado Fácil",
+    "slug": "lista-mercado-facil",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+      "expo-sqlite"
+    ],
     "android": {
-      "package": "com.andre.alves.listamercadofacil"
+      "package": "com.andre.alves.listamercadofacil",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#063B8F"
+      }
     },
     "extra": {
       "eas": {

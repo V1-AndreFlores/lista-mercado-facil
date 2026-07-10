@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../app/navigation/AppNavigator';
@@ -34,6 +34,7 @@ export function HomeScreen({ navigation }: Props) {
   const [deletingHistoryListId, setDeletingHistoryListId] = useState<string | null>(null);
   const [historyListPendingDeletion, setHistoryListPendingDeletion] =
     useState<ShoppingList | null>(null);
+  const [historyListToView, setHistoryListToView] = useState<ShoppingList | null>(null);
   const theme = useAppTheme();
   const styles = createStyles(theme);
 
@@ -102,6 +103,18 @@ export function HomeScreen({ navigation }: Props) {
     }
   }
 
+  function handleRequestViewHistoryList(list: ShoppingList) {
+    if (reusingListId || deletingHistoryListId) {
+      return;
+    }
+
+    setHistoryListToView(list);
+  }
+
+  function handleCloseHistoryListDetails() {
+    setHistoryListToView(null);
+  }
+
   function handleRequestDeleteHistoryList(list: ShoppingList) {
     if (reusingListId || deletingHistoryListId) {
       return;
@@ -146,16 +159,16 @@ export function HomeScreen({ navigation }: Props) {
         <AppGradientHeader
           eyebrow="Compras inteligentes"
           title="Lista de Mercado Fácil"
-          description="Monte sua lista, organize por setores e siga uma rota mais eficiente no supermercado."
+          description="Monte sua lista, organize por corredores e siga uma rota mais eficiente no supermercado."
         />
 
         <View style={styles.content}>
           <AppCard elevated style={styles.primaryCard}>
             <View style={styles.primaryAccent} />
             <AppText variant="label" accent>Rota de compra</AppText>
-            <AppText variant="headline" style={styles.cardTitle}>Sua lista em ordem, setor por setor.</AppText>
+            <AppText variant="headline" style={styles.cardTitle}>Sua lista em ordem, corredor por corredor.</AppText>
             <AppText muted style={styles.cardDescription}>
-              Adicione produtos e o aplicativo agrupa tudo conforme os setores do supermercado selecionado.
+              Adicione produtos e o aplicativo agrupa tudo conforme os corredores do supermercado selecionado.
             </AppText>
             <AppButton onPress={() => navigation.navigate('ShoppingList')} style={styles.primaryButton}>
               Começar lista
@@ -166,7 +179,7 @@ export function HomeScreen({ navigation }: Props) {
             <AppActionCard
               label="Mercados"
               title="Supermercados"
-              description="Personalize setores e rotas por mercado."
+              description="Personalize corredores e rotas por mercado."
               onPress={() => navigation.navigate('Markets')}
             />
             <AppActionCard
@@ -208,11 +221,19 @@ export function HomeScreen({ navigation }: Props) {
               isReusing={reusingListId === list.id}
               isDeleting={deletingHistoryListId === list.id}
               onReuse={() => handleReuseList(list)}
+              onViewList={() => handleRequestViewHistoryList(list)}
               onDelete={() => handleRequestDeleteHistoryList(list)}
             />
           ))}
         </View>
       </AppScreen>
+
+      <HistoryListDetailsModal
+        visible={Boolean(historyListToView)}
+        list={historyListToView}
+        marketName={historyListToView ? marketNamesById[historyListToView.marketId] ?? 'Mercado não informado' : ''}
+        onClose={handleCloseHistoryListDetails}
+      />
 
       <ConfirmDeleteHistoryListModal
         visible={Boolean(historyListPendingDeletion)}
@@ -231,6 +252,7 @@ interface HistoryListCardProps {
   isReusing: boolean;
   isDeleting: boolean;
   onReuse: () => void;
+  onViewList: () => void;
   onDelete: () => void;
 }
 
@@ -240,6 +262,7 @@ function HistoryListCard({
   isReusing,
   isDeleting,
   onReuse,
+  onViewList,
   onDelete,
 }: HistoryListCardProps) {
   const theme = useAppTheme();
@@ -285,6 +308,20 @@ function HistoryListCard({
 
           <Pressable
             disabled={isBusy}
+            onPress={onViewList}
+            style={({ pressed }) => [
+              styles.viewHistoryButton,
+              isBusy ? styles.disabledButton : null,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <AppText variant="caption" style={styles.viewHistoryButtonText}>
+              Ver lista
+            </AppText>
+          </Pressable>
+
+          <Pressable
+            disabled={isBusy}
             onPress={onDelete}
             style={({ pressed }) => [
               styles.deleteHistoryButton,
@@ -301,6 +338,108 @@ function HistoryListCard({
     </AppCard>
   );
 }
+
+
+interface HistoryListDetailsModalProps {
+  visible: boolean;
+  list: ShoppingList | null;
+  marketName: string;
+  onClose: () => void;
+}
+
+function HistoryListDetailsModal({
+  visible,
+  list,
+  marketName,
+  onClose,
+}: HistoryListDetailsModalProps) {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  if (!list) {
+    return null;
+  }
+
+  const completedTotalCents = calculatePurchasedTotalCents(list);
+
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalCard, styles.historyDetailsModalCard]}>
+          <AppText variant="subtitle" style={styles.modalTitle}>
+            Extrato da compra
+          </AppText>
+          <AppText muted style={styles.modalDescription}>
+            {list.name} · {marketName}
+          </AppText>
+
+          <ScrollView
+            style={styles.historyDetailsList}
+            contentContainerStyle={styles.historyDetailsListContent}
+          >
+            {list.items.map((item) => {
+              const itemTotalCents = multiplyCurrencyCents(item.unitPriceCents, item.quantity);
+              const hasPrice = itemTotalCents > 0;
+
+              return (
+                <View key={item.id} style={styles.historyDetailsItem}>
+                  <View style={styles.historyDetailsItemHeader}>
+                    <AppText style={styles.historyDetailsItemName}>
+                      {formatHistoryItemName(item)}
+                    </AppText>
+                    <AppText variant="caption" subtle style={styles.historyDetailsItemStatus}>
+                      {item.isPurchased ? 'Comprado' : 'Pendente'}
+                    </AppText>
+                  </View>
+
+                  {hasPrice ? (
+                    <View style={styles.historyDetailsPriceBlock}>
+                      <AppText variant="caption" style={styles.historyDetailsPriceText}>
+                        {formatCurrencyCents(item.unitPriceCents)} unitário
+                      </AppText>
+                      <AppText variant="caption" style={styles.historyDetailsPriceText}>
+                        {formatCurrencyCents(itemTotalCents)} total
+                      </AppText>
+                    </View>
+                  ) : (
+                    <AppText variant="caption" subtle>
+                      Sem preço informado
+                    </AppText>
+                  )}
+                </View>
+              );
+            })}
+          </ScrollView>
+
+          {completedTotalCents > 0 ? (
+            <View style={styles.historyDetailsTotal}>
+              <AppText variant="caption" accent>Total comprado</AppText>
+              <AppText variant="subtitle" style={styles.historyDetailsTotalValue}>
+                {formatCurrencyCents(completedTotalCents)}
+              </AppText>
+            </View>
+          ) : null}
+
+          <View style={styles.modalActions}>
+            <Pressable
+              onPress={onClose}
+              style={({ pressed }) => [
+                styles.modalButton,
+                styles.modalPrimaryButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.modalPrimaryText}>
+                Fechar
+              </AppText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 
 interface ConfirmDeleteHistoryListModalProps {
   visible: boolean;
@@ -364,6 +503,17 @@ function ConfirmDeleteHistoryListModal({
       </View>
     </Modal>
   );
+}
+
+
+function formatHistoryItemName(item: ShoppingList['items'][number]): string {
+  const quantity = item.quantity && item.quantity > 0 ? item.quantity : 1;
+
+  if (quantity === 1) {
+    return item.name;
+  }
+
+  return `${quantity}x ${item.name}`;
 }
 
 function calculatePurchasedTotalCents(list: ShoppingList): number {
@@ -487,6 +637,18 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       color: theme.colors.primaryStrong,
       fontWeight: '900',
     },
+    viewHistoryButton: {
+      minHeight: 36,
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.colors.surfaceMuted,
+      paddingHorizontal: theme.spacing.md,
+    },
+    viewHistoryButtonText: {
+      color: theme.colors.primaryStrong,
+      fontWeight: '900',
+    },
     deleteHistoryButton: {
       minHeight: 34,
       justifyContent: 'center',
@@ -547,6 +709,57 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     },
     modalCancelButton: {
       backgroundColor: theme.colors.surfaceMuted,
+    },
+    modalPrimaryButton: {
+      backgroundColor: theme.colors.primary,
+    },
+    modalPrimaryText: {
+      color: theme.colors.primaryText,
+      fontWeight: '900',
+    },
+    historyDetailsModalCard: {
+      maxHeight: '82%',
+    },
+    historyDetailsList: {
+      marginTop: theme.spacing.lg,
+      maxHeight: 360,
+    },
+    historyDetailsListContent: {
+      gap: theme.spacing.sm,
+      paddingBottom: theme.spacing.sm,
+    },
+    historyDetailsItem: {
+      padding: theme.spacing.md,
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.colors.surfaceMuted,
+      gap: theme.spacing.xs,
+    },
+    historyDetailsItemHeader: {
+      gap: 2,
+    },
+    historyDetailsItemName: {
+      fontWeight: '900',
+    },
+    historyDetailsItemStatus: {
+      fontWeight: '800',
+    },
+    historyDetailsPriceBlock: {
+      gap: 1,
+    },
+    historyDetailsPriceText: {
+      color: theme.colors.primaryStrong,
+      fontWeight: '900',
+      lineHeight: 18,
+    },
+    historyDetailsTotal: {
+      marginTop: theme.spacing.lg,
+      paddingTop: theme.spacing.md,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+    },
+    historyDetailsTotalValue: {
+      marginTop: 2,
+      color: theme.colors.primaryStrong,
     },
     modalDangerButton: {
       backgroundColor: theme.mode === 'dark' ? '#7F1D1D' : '#FEE2E2',
