@@ -14,6 +14,8 @@ Criar um aplicativo mobile offline-first que permita:
 
 - montar listas de compras rapidamente;
 - organizar os itens por corredor/setor do supermercado;
+- permitir informar preço unitário opcional por produto;
+- mostrar o total parcial da compra com base nos itens já marcados como comprados;
 - manter supermercados cadastrados com ordem própria de corredores;
 - manter uma lista de **Corredores padrão** usada como base para novos supermercados;
 - permitir que o usuário personalize a organização conforme a realidade de cada mercado;
@@ -110,7 +112,11 @@ Projeto em desenvolvimento ativo.
   - nome padrão "Compra do dia" quando o usuário não informa nome;
   - conclusão de compra;
   - adição de produtos;
-  - quantidade simples;
+  - quantidade simples com entrada apenas de números inteiros;
+  - normalização automática de quantidade vazia ou zero para 1;
+  - preço unitário opcional por produto;
+  - máscara automática de preço no padrão pt-BR;
+  - cálculo do total da compra com base nos itens comprados;
   - bloqueio de produto repetido;
   - marcação de produto como comprado;
   - remoção de produto com confirmação;
@@ -131,7 +137,9 @@ Projeto em desenvolvimento ativo.
   - exclusão de histórico;
   - exibição de data;
   - exibição de hora e minuto;
-  - exibição do nome do supermercado.
+  - exibição do nome do supermercado;
+  - preservação dos preços informados;
+  - exibição do total da compra quando houver preços.
 - Tela Ajustes com:
   - alternância entre tema claro e escuro;
   - switch customizado com padrão visual azul/ciano;
@@ -233,7 +241,8 @@ Dados locais principais:
 - itens;
 - histórico;
 - preferências aprendidas pelo app;
-- configurações.
+- configurações;
+- preços unitários opcionais dos produtos.
 
 ### AsyncStorage
 
@@ -427,6 +436,7 @@ Cada item possui:
 - unidade;
 - corredor/setor;
 - status de comprado;
+- preço unitário opcional em centavos;
 - datas de criação e atualização.
 
 ### UserProductPreference
@@ -601,16 +611,64 @@ A tela Lista permite:
 - trocar entre listas abertas;
 - adicionar produtos;
 - informar quantidade simples;
+- aceitar somente quantidade inteira maior ou igual a 1;
+- normalizar quantidade vazia ou zero para 1;
+- informar preço unitário opcional;
+- formatar preço automaticamente no padrão pt-BR;
 - bloquear produtos repetidos;
 - classificar produto por corredor/setor;
 - agrupar itens por corredor;
 - ordenar os grupos conforme a rota do supermercado ativo;
 - marcar item como comprado;
 - editar quantidade;
+- editar preço unitário;
+- recalcular totais quando a quantidade ou o preço mudam;
 - trocar o corredor do item;
 - remover item com confirmação;
 - limpar a lista com confirmação;
-- concluir a compra.
+- concluir a compra;
+- acompanhar o total parcial dos itens já comprados.
+
+---
+
+## Preços e total da compra
+
+O app permite informar preço unitário opcional para cada produto durante a compra.
+
+Regras:
+
+- o preço não é obrigatório;
+- o campo usa máscara automática no padrão pt-BR;
+- a entrada é tratada em centavos;
+- o valor é armazenado internamente como inteiro em centavos;
+- a exibição usa formato monetário brasileiro;
+- o preço informado representa o preço unitário do produto;
+- o total do item é calculado por quantidade x preço unitário;
+- o total da compra considera somente itens marcados como comprados;
+- se nenhum item comprado tiver preço, o total da compra não é exibido;
+- ao alterar quantidade ou preço, os totais são recalculados.
+
+Exemplo:
+
+```text
+Leite
+Quantidade: 3
+Preço unitário: R$ 5,89
+Total do item: R$ 17,67
+```
+
+### Reaproveitamento de preços
+
+Os preços informados são preservados nas compras concluídas.
+
+Quando um produto aparecer novamente em uma nova compra, o app pode usar o preço unitário mais recente encontrado no histórico para preencher ou sugerir o valor.
+
+Regras:
+
+- o preço mais recente vem de compras concluídas;
+- alterações feitas durante uma compra ativa passam a ser referência futura somente após a compra ser concluída;
+- o preço continua opcional e pode ser removido ou alterado pelo usuário.
+
 
 ---
 
@@ -625,6 +683,8 @@ A tela Início exibe:
 - hora e minuto de conclusão;
 - nome do supermercado;
 - quantidade de itens;
+- total da compra quando houver preços informados;
+- preços preservados nos itens da lista concluída;
 - opção de reutilizar uma lista;
 - opção de apagar histórico.
 
@@ -795,8 +855,12 @@ A splash é a tela inicial do fluxo e redireciona para a tela Início após conc
 - Classificar item por corredor.
 - Agrupar itens por corredor.
 - Ordenar grupos conforme o mercado ativo.
+- Informar quantidade inteira.
+- Informar preço unitário opcional.
+- Exibir total parcial dos itens comprados.
 - Marcar item como comprado.
 - Editar quantidade.
+- Editar preço unitário.
 - Alterar corredor de um item.
 - Remover item.
 - Limpar lista.
@@ -850,6 +914,9 @@ Status: concluído.
 - Concluir compra.
 - Editar nome da lista.
 - Trocar lista ativa.
+- Informar preço unitário opcional.
+- Exibir total parcial da compra.
+- Reaproveitar preço mais recente a partir do histórico.
 
 Status: implementado em evolução.
 
@@ -873,6 +940,8 @@ Status: implementado em evolução.
 - Apagar histórico.
 - Configurar retenção.
 - Aplicar limpeza na abertura do app.
+- Preservar preços informados nas compras concluídas.
+- Exibir total da compra no histórico quando houver preços.
 
 Status: implementado em evolução.
 
@@ -1008,6 +1077,12 @@ Prioridades de teste:
 - marcação de item como comprado;
 - preferências de usuário;
 - retenção do histórico;
+- quantidade inteira maior ou igual a 1;
+- máscara de preço no padrão pt-BR;
+- cálculo de total por item;
+- cálculo de total da compra somente com itens comprados;
+- preservação de preços no histórico;
+- reaproveitamento do preço unitário mais recente;
 - criação de novo supermercado com Corredores padrão;
 - edição de Corredores padrão;
 - edição de Corredores do mercado;
@@ -1026,6 +1101,9 @@ itens comprados devem ser exibidos após os pendentes
 novo supermercado deve copiar os Corredores padrão atuais
 não deve permitir corredor duplicado ignorando acentuação
 não deve permitir excluir o último corredor
+quantidade vazia ou zero deve ser normalizada para 1
+preço 1290 deve ser exibido como R$ 12,90
+total da compra deve considerar somente itens comprados
 ```
 
 Executar testes:
