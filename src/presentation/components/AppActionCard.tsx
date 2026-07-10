@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AppCard } from './AppCard';
 import { AppText } from './AppText';
 import { useAppTheme } from './useAppTheme';
@@ -19,7 +19,7 @@ export function AppActionCard({ label, title, description, onPress }: AppActionC
       <AppCard style={styles.card} compact>
         <View style={styles.accentBar} />
         <AppText variant="caption" accent style={styles.label}>{label}</AppText>
-        <AppText variant="subtitle" style={styles.title}>{title}</AppText>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78} style={styles.title}>{title}</Text>
         <AppText muted style={styles.description}>{description}</AppText>
       </AppCard>
     </Pressable>
@@ -55,8 +55,11 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     title: {
       marginLeft: theme.spacing.xs,
       marginTop: theme.spacing.sm,
-      fontSize: 17,
-      lineHeight: 22,
+      color: theme.colors.text,
+      fontSize: 15,
+      lineHeight: 21,
+      fontWeight: '900',
+      letterSpacing: -0.2,
     },
     description: {
       marginLeft: theme.spacing.xs,

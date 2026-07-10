@@ -10,6 +10,11 @@
   "expo": {
     "android": {
       "package": "com.andre.alves.listamercadofacil"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "4c4ca9bc-ec07-4190-896b-cbcac2a91b73"
+      }
     }
   }
 }
