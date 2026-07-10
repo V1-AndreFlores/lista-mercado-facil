@@ -3,11 +3,14 @@ import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Market } from '../../domain/entities/Market';
 import { normalizeText } from '../../domain/services/normalizeText';
-import { createMarketWithDefaultSections } from '../../domain/services/createMarketWithDefaultSections';
+import { createMarketWithSections } from '../../domain/services/createMarketWithSections';
 import { reorderMarketSection, type MarketSectionMoveDirection } from '../../domain/services/reorderMarketSections';
+import { suggestMarketSectionName } from '../../domain/services/suggestMarketSectionName';
 import { createMarketRepository } from '../../infrastructure/repositories/MarketRepositoryFactory';
+import { DefaultMarketSection, DefaultMarketSectionRepository } from '../../infrastructure/repositories/DefaultMarketSectionRepository';
 import { useAppDispatch } from '../../app/store/hooks';
 import { setSelectedMarketId } from '../../app/store/slices/marketSlice';
+import { createId } from '../../shared/utils/createId';
 import { AppButton } from '../components/AppButton';
 import { AppCard } from '../components/AppCard';
 import { AppGradientHeader } from '../components/AppGradientHeader';
@@ -20,15 +23,32 @@ interface MarketFormState {
   market?: Market;
 }
 
+type MarketSection = Market['sections'][number];
+
+type EditableSection = {
+  id: string;
+  marketId?: string;
+  name: string;
+  routeOrder: number;
+  isActive: boolean;
+};
+
+interface SectionEditorState {
+  mode: 'default' | 'market';
+  market?: Market;
+}
+
 export function MarketsScreen() {
   const dispatch = useAppDispatch();
   const [markets, setMarkets] = useState<Market[]>([]);
+  const [defaultSections, setDefaultSections] = useState<DefaultMarketSection[]>([]);
   const [activeMarketId, setActiveMarketId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [savingSectionId, setSavingSectionId] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
   const [formState, setFormState] = useState<MarketFormState | null>(null);
+  const [sectionEditorState, setSectionEditorState] = useState<SectionEditorState | null>(null);
   const theme = useAppTheme();
   const styles = createStyles(theme);
 
@@ -42,25 +62,43 @@ export function MarketsScreen() {
     [markets, activeMarketId],
   );
 
+  const sectionEditorSections = useMemo(() => {
+    if (!sectionEditorState) {
+      return [];
+    }
+
+    if (sectionEditorState.mode === 'default') {
+      return defaultSections;
+    }
+
+    return sectionEditorState.market?.sections ?? [];
+  }, [defaultSections, sectionEditorState]);
+
   const loadMarkets = useCallback(async () => {
     setIsLoading(true);
     setScreenError(null);
 
     try {
-      const repository = await createMarketRepository();
-      const [result, activeId] = await Promise.all([
-        repository.getAll(),
-        repository.getActiveMarketId(),
+      const [marketRepository, defaultSectionRepository] = await Promise.all([
+        createMarketRepository(),
+        Promise.resolve(new DefaultMarketSectionRepository()),
+      ]);
+
+      const [result, activeId, storedDefaultSections] = await Promise.all([
+        marketRepository.getAll(),
+        marketRepository.getActiveMarketId(),
+        defaultSectionRepository.getAll(),
       ]);
 
       const fallbackMarket = result.find((market) => market.isDefault) ?? result[0] ?? null;
       const resolvedActiveId = activeId ?? fallbackMarket?.id ?? null;
 
       if (resolvedActiveId && !activeId) {
-        await repository.setActiveMarketId(resolvedActiveId);
+        await marketRepository.setActiveMarketId(resolvedActiveId);
       }
 
       setMarkets(result);
+      setDefaultSections(storedDefaultSections);
       setActiveMarketId(resolvedActiveId);
       dispatch(setSelectedMarketId(resolvedActiveId));
     } catch {
@@ -93,11 +131,9 @@ export function MarketsScreen() {
     try {
       const repository = await createMarketRepository();
       await repository.update(updatedMarket);
-      setMarkets((currentMarkets) => currentMarkets.map((currentMarket) => (
-        currentMarket.id === updatedMarket.id ? updatedMarket : currentMarket
-      )));
+      updateMarketInState(updatedMarket);
     } catch {
-      setScreenError('Não foi possível salvar a nova ordem dos setores.');
+      setScreenError('Não foi possível salvar a nova ordem dos corredores.');
     } finally {
       setSavingSectionId(null);
     }
@@ -128,7 +164,7 @@ export function MarketsScreen() {
       return;
     }
 
-    const trimmedName = name.trim();
+    const trimmedName = normalizeInputName(name);
     const normalizedName = normalizeText(trimmedName);
     const isDuplicate = markets.some((market) => (
       normalizeText(market.name) === normalizedName && market.id !== formState.market?.id
@@ -149,7 +185,10 @@ export function MarketsScreen() {
       const repository = await createMarketRepository();
 
       if (formState.mode === 'create') {
-        const newMarket = createMarketWithDefaultSections(trimmedName);
+        const defaultSectionRepository = new DefaultMarketSectionRepository();
+        const sections = defaultSections.length > 0 ? defaultSections : await defaultSectionRepository.getAll();
+        const newMarket = createMarketWithSections(trimmedName, sections);
+
         await repository.save(newMarket);
         await repository.setActiveMarketId(newMarket.id);
         setMarkets((currentMarkets) => [...currentMarkets, newMarket]);
@@ -160,16 +199,87 @@ export function MarketsScreen() {
           ...formState.market,
           name: trimmedName,
         };
+
         await repository.update(updatedMarket);
-        setMarkets((currentMarkets) => currentMarkets.map((market) => (
-          market.id === updatedMarket.id ? updatedMarket : market
-        )));
+        updateMarketInState(updatedMarket);
       }
 
       setFormState(null);
     } finally {
       setIsSaving(false);
     }
+  }
+
+  async function handleSaveEditedSections(sections: EditableSection[]) {
+    if (!sectionEditorState || isSaving) {
+      return;
+    }
+
+    const normalizedSections = normalizeEditableSections(sections);
+
+    if (normalizedSections.length === 0) {
+      throw new Error('Mantenha pelo menos um corredor.');
+    }
+
+    setIsSaving(true);
+    setScreenError(null);
+
+    try {
+      if (sectionEditorState.mode === 'default') {
+        const repository = new DefaultMarketSectionRepository();
+        const updatedDefaultSections: DefaultMarketSection[] = normalizedSections.map((section) => ({
+          id: section.id,
+          name: section.name,
+          routeOrder: section.routeOrder,
+          isActive: section.isActive,
+        }));
+
+        await repository.saveAll(updatedDefaultSections);
+        setDefaultSections(updatedDefaultSections);
+        setSectionEditorState(null);
+        return;
+      }
+
+      if (!sectionEditorState.market) {
+        return;
+      }
+
+      const market = sectionEditorState.market;
+      const updatedMarket: Market = {
+        ...market,
+        sections: normalizedSections.map((section) => ({
+          id: section.id,
+          marketId: market.id,
+          name: section.name,
+          routeOrder: section.routeOrder,
+          isActive: section.isActive,
+        })) as MarketSection[],
+      };
+
+      const repository = await createMarketRepository();
+      await repository.update(updatedMarket);
+      updateMarketInState(updatedMarket);
+      setSectionEditorState(null);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function updateMarketInState(updatedMarket: Market) {
+    setMarkets((currentMarkets) => currentMarkets.map((market) => (
+      market.id === updatedMarket.id ? updatedMarket : market
+    )));
+
+    setSectionEditorState((currentState) => {
+      if (currentState?.market?.id !== updatedMarket.id) {
+        return currentState;
+      }
+
+      return {
+        ...currentState,
+        market: updatedMarket,
+      };
+    });
   }
 
   if (isLoading) {
@@ -188,7 +298,7 @@ export function MarketsScreen() {
           compact
           eyebrow="Mercados"
           title="Supermercados"
-          description="Cadastre mercados e ajuste a ordem dos setores para montar a rota de compra ideal."
+          description="Cadastre mercados e ajuste os corredores para montar a rota de compra ideal."
         />
 
         <View style={styles.content}>
@@ -204,7 +314,7 @@ export function MarketsScreen() {
               <View style={styles.createTextContainer}>
                 <AppText variant="subtitle">Novo supermercado</AppText>
                 <AppText muted style={styles.createDescription}>
-                  Cada mercado pode ter sua própria ordem de setores.
+                  Cada novo mercado recebe uma cópia dos corredores padrão.
                 </AppText>
               </View>
               <AppButton style={styles.createButton} onPress={() => setFormState({ mode: 'create' })}>
@@ -212,6 +322,34 @@ export function MarketsScreen() {
               </AppButton>
             </View>
           </AppCard>
+
+          <AppCard elevated style={styles.defaultSectionsCard}>
+            <View style={styles.defaultSectionsHeader}>
+              <View style={styles.defaultSectionsTextContainer}>
+                <AppText variant="subtitle">Corredores padrão</AppText>
+                <AppText muted style={styles.createDescription}>
+                  Define a lista inicial usada ao criar novos supermercados.
+                </AppText>
+                <AppText subtle variant="caption" style={styles.defaultSectionsCount}>
+                  {defaultSections.length} corredor{defaultSections.length === 1 ? '' : 'es'} configurado{defaultSections.length === 1 ? '' : 's'}
+                </AppText>
+              </View>
+
+              <SecondaryActionButton
+                label="Editar"
+                disabled={isSaving}
+                highlighted
+                onPress={() => setSectionEditorState({ mode: 'default' })}
+              />
+            </View>
+          </AppCard>
+
+          <View style={styles.listTitleBlock}>
+            <AppText variant="label" accent>Mercados cadastrados</AppText>
+            <AppText muted style={styles.sectionHint}>
+              Edite os corredores de cada mercado sem alterar os corredores padrão.
+            </AppText>
+          </View>
 
           {sortedMarkets.map((market) => (
             <MarketRouteCard
@@ -222,6 +360,7 @@ export function MarketsScreen() {
               savingSectionId={savingSectionId}
               onSelectMarket={handleSelectMarket}
               onEditMarket={(selectedMarket) => setFormState({ mode: 'edit', market: selectedMarket })}
+              onEditSections={(selectedMarket) => setSectionEditorState({ mode: 'market', market: selectedMarket })}
               onMoveSection={handleMoveSection}
             />
           ))}
@@ -236,6 +375,20 @@ export function MarketsScreen() {
         onCancel={() => setFormState(null)}
         onSave={handleSaveMarketName}
       />
+
+      <SectionEditorModal
+        visible={Boolean(sectionEditorState)}
+        title={sectionEditorState?.mode === 'default' ? 'Corredores padrão' : 'Corredores do mercado'}
+        description={
+          sectionEditorState?.mode === 'default'
+            ? 'Esta lista será usada como base para novos supermercados. Mercados existentes não serão alterados.'
+            : `Ajuste somente os corredores de ${sectionEditorState?.market?.name ?? 'este mercado'}.`
+        }
+        sections={sectionEditorSections}
+        isSaving={isSaving}
+        onCancel={() => setSectionEditorState(null)}
+        onSave={handleSaveEditedSections}
+      />
     </>
   );
 }
@@ -247,6 +400,7 @@ interface MarketRouteCardProps {
   savingSectionId: string | null;
   onSelectMarket: (market: Market) => void;
   onEditMarket: (market: Market) => void;
+  onEditSections: (market: Market) => void;
   onMoveSection: (market: Market, sectionId: string, direction: MarketSectionMoveDirection) => void;
 }
 
@@ -257,6 +411,7 @@ function MarketRouteCard({
   savingSectionId,
   onSelectMarket,
   onEditMarket,
+  onEditSections,
   onMoveSection,
 }: MarketRouteCardProps) {
   const theme = useAppTheme();
@@ -286,7 +441,7 @@ function MarketRouteCard({
 
         <View style={styles.marketActions}>
           <SecondaryActionButton
-            label="Editar"
+            label="Editar nome"
             disabled={isSaving}
             onPress={() => onEditMarket(market)}
           />
@@ -300,10 +455,22 @@ function MarketRouteCard({
       </View>
 
       <View style={styles.sectionIntro}>
-        <View>
-          <AppText variant="label" accent>Rota de setores</AppText>
-          <AppText muted style={styles.sectionHint}>Use subir e descer para ajustar o caminho real dentro do mercado.</AppText>
+        <View style={styles.sectionIntroText}>
+          <AppText variant="label" accent>Corredores do mercado</AppText>
+          <AppText muted style={styles.sectionHint}>Ajuste a ordem real dos corredores deste supermercado.</AppText>
         </View>
+
+        <Pressable
+          disabled={isSaving}
+          onPress={() => onEditSections(market)}
+          style={({ pressed }) => [
+            styles.editSectionsButton,
+            isSaving ? styles.secondaryActionButtonDisabled : null,
+            pressed && !isSaving ? styles.pressed : null,
+          ]}
+        >
+          <AppText variant="caption" style={styles.editSectionsButtonText}>Editar corredores</AppText>
+        </Pressable>
       </View>
 
       <View style={styles.sectionsList}>
@@ -321,7 +488,7 @@ function MarketRouteCard({
 
               <View style={styles.sectionInfo}>
                 <AppText style={styles.sectionName}>{section.name}</AppText>
-                <AppText subtle variant="caption">Setor ativo</AppText>
+                <AppText subtle variant="caption">Corredor ativo</AppText>
               </View>
 
               <View style={styles.sectionActions}>
@@ -381,7 +548,9 @@ function MarketFormModal({ visible, mode, initialName, isSaving, onCancel, onSav
             {mode === 'create' ? 'Adicionar mercado' : 'Editar mercado'}
           </AppText>
           <AppText muted style={styles.modalDescription}>
-            Informe um nome fácil de reconhecer. A ordem dos setores poderá ser ajustada em seguida.
+            {mode === 'create'
+              ? 'O novo mercado será criado com uma cópia dos corredores padrão.'
+              : 'Informe um nome fácil de reconhecer.'}
           </AppText>
 
           <TextInput
@@ -418,6 +587,371 @@ function MarketFormModal({ visible, mode, initialName, isSaving, onCancel, onSav
               <AppText variant="caption" style={styles.modalPrimaryText}>
                 {isSaving ? 'Salvando' : 'Salvar'}
               </AppText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+interface SectionEditorModalProps {
+  visible: boolean;
+  title: string;
+  description: string;
+  sections: EditableSection[];
+  isSaving: boolean;
+  onCancel: () => void;
+  onSave: (sections: EditableSection[]) => Promise<void>;
+}
+
+type SectionFormState = {
+  mode: 'create' | 'edit';
+  section?: EditableSection;
+};
+
+function SectionEditorModal({ visible, title, description, sections, isSaving, onCancel, onSave }: SectionEditorModalProps) {
+  const [draftSections, setDraftSections] = useState<EditableSection[]>([]);
+  const [sectionFormState, setSectionFormState] = useState<SectionFormState | null>(null);
+  const [sectionPendingDeletion, setSectionPendingDeletion] = useState<EditableSection | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  useEffect(() => {
+    if (visible) {
+      setDraftSections(normalizeEditableSections(sections));
+      setSectionFormState(null);
+      setSectionPendingDeletion(null);
+      setModalError(null);
+    }
+  }, [visible, sections]);
+
+  function handleMoveSection(sectionId: string, direction: MarketSectionMoveDirection) {
+    setDraftSections((currentSections) => reorderEditableSections(currentSections, sectionId, direction));
+  }
+
+  function handleSaveSectionName(name: string) {
+    if (!sectionFormState) {
+      return;
+    }
+
+    const trimmedName = normalizeInputName(name);
+    const normalizedName = normalizeText(trimmedName);
+
+    if (!trimmedName) {
+      throw new Error('Informe o nome do corredor.');
+    }
+
+    const hasDuplicate = draftSections.some((section) => (
+      normalizeText(section.name) === normalizedName && section.id !== sectionFormState.section?.id
+    ));
+
+    if (hasDuplicate) {
+      throw new Error('Já existe um corredor com esse nome.');
+    }
+
+    if (sectionFormState.mode === 'create') {
+      setDraftSections((currentSections) => normalizeEditableSections([
+        ...currentSections,
+        {
+          id: createId(),
+          name: trimmedName,
+          routeOrder: currentSections.length + 1,
+          isActive: true,
+        },
+      ]));
+    } else if (sectionFormState.section) {
+      setDraftSections((currentSections) => currentSections.map((section) => (
+        section.id === sectionFormState.section?.id
+          ? { ...section, name: trimmedName }
+          : section
+      )));
+    }
+
+    setSectionFormState(null);
+    setModalError(null);
+  }
+
+  function handleRequestDeleteSection(section: EditableSection) {
+    if (draftSections.length <= 1) {
+      setModalError('Mantenha pelo menos um corredor.');
+      return;
+    }
+
+    setSectionPendingDeletion(section);
+  }
+
+  function handleConfirmDeleteSection() {
+    if (!sectionPendingDeletion) {
+      return;
+    }
+
+    setDraftSections((currentSections) => normalizeEditableSections(
+      currentSections.filter((section) => section.id !== sectionPendingDeletion.id),
+    ));
+    setSectionPendingDeletion(null);
+    setModalError(null);
+  }
+
+  async function handleSaveAll() {
+    setModalError(null);
+
+    try {
+      await onSave(normalizeEditableSections(draftSections));
+    } catch (error) {
+      setModalError(error instanceof Error ? error.message : 'Não foi possível salvar os corredores.');
+    }
+  }
+
+  return (
+    <>
+      <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, styles.sectionEditorCard]}>
+            <AppText variant="subtitle" style={styles.modalTitle}>{title}</AppText>
+            <AppText muted style={styles.modalDescription}>{description}</AppText>
+
+            {modalError ? (
+              <AppText variant="caption" style={styles.validationMessage}>{modalError}</AppText>
+            ) : null}
+
+            <Pressable
+              disabled={isSaving}
+              onPress={() => setSectionFormState({ mode: 'create' })}
+              style={({ pressed }) => [
+                styles.addSectionButton,
+                isSaving ? styles.secondaryActionButtonDisabled : null,
+                pressed && !isSaving ? styles.pressed : null,
+              ]}
+            >
+              <AppText variant="caption" style={styles.addSectionButtonText}>Adicionar corredor</AppText>
+            </Pressable>
+
+            <ScrollView style={styles.sectionEditorList} contentContainerStyle={styles.sectionEditorListContent}>
+              {draftSections.map((section, index) => {
+                const isFirst = index === 0;
+                const isLast = index === draftSections.length - 1;
+
+                return (
+                  <View key={section.id} style={styles.editorSectionRow}>
+                    <View style={styles.routeIndex}>
+                      <AppText variant="caption" style={styles.routeIndexText}>{index + 1}</AppText>
+                    </View>
+
+                    <View style={styles.sectionInfo}>
+                      <AppText style={styles.sectionName}>{section.name}</AppText>
+                      <AppText subtle variant="caption">Corredor ativo</AppText>
+                    </View>
+
+                    <View style={styles.editorSectionActions}>
+                      <SmallActionButton
+                        label="Editar"
+                        disabled={isSaving}
+                        onPress={() => setSectionFormState({ mode: 'edit', section })}
+                      />
+                      <SmallActionButton
+                        label="Apagar"
+                        danger
+                        disabled={isSaving}
+                        onPress={() => handleRequestDeleteSection(section)}
+                      />
+                      <View style={styles.editorMoveActions}>
+                        <RouteButton
+                          label="Subir"
+                          disabled={isFirst || isSaving}
+                          loading={false}
+                          onPress={() => handleMoveSection(section.id, 'up')}
+                        />
+                        <RouteButton
+                          label="Descer"
+                          disabled={isLast || isSaving}
+                          loading={false}
+                          onPress={() => handleMoveSection(section.id, 'down')}
+                        />
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={onCancel}
+                disabled={isSaving}
+                style={({ pressed }) => [styles.modalButton, styles.modalCancelButton, pressed ? styles.pressed : null]}
+              >
+                <AppText variant="caption" style={styles.modalCancelText}>Cancelar</AppText>
+              </Pressable>
+
+              <Pressable
+                onPress={handleSaveAll}
+                disabled={isSaving}
+                style={({ pressed }) => [styles.modalButton, styles.modalPrimaryButton, pressed ? styles.pressed : null]}
+              >
+                <AppText variant="caption" style={styles.modalPrimaryText}>
+                  {isSaving ? 'Salvando' : 'Salvar'}
+                </AppText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <SectionFormModal
+        visible={Boolean(sectionFormState)}
+        mode={sectionFormState?.mode ?? 'create'}
+        initialName={sectionFormState?.section?.name ?? ''}
+        isSaving={isSaving}
+        onCancel={() => setSectionFormState(null)}
+        onSave={handleSaveSectionName}
+      />
+
+      <ConfirmDeleteSectionModal
+        visible={Boolean(sectionPendingDeletion)}
+        sectionName={sectionPendingDeletion?.name ?? ''}
+        isSaving={isSaving}
+        onCancel={() => setSectionPendingDeletion(null)}
+        onConfirm={handleConfirmDeleteSection}
+      />
+    </>
+  );
+}
+
+interface SectionFormModalProps {
+  visible: boolean;
+  mode: 'create' | 'edit';
+  initialName: string;
+  isSaving: boolean;
+  onCancel: () => void;
+  onSave: (name: string) => void;
+}
+
+function SectionFormModal({ visible, mode, initialName, isSaving, onCancel, onSave }: SectionFormModalProps) {
+  const [name, setName] = useState(initialName);
+  const [error, setError] = useState<string | null>(null);
+  const suggestion = suggestMarketSectionName(name);
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  useFocusReset(visible, initialName, setName, setError);
+
+  function handleSave() {
+    setError(null);
+
+    try {
+      onSave(name);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Não foi possível salvar o corredor.');
+    }
+  }
+
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <AppText variant="subtitle" style={styles.modalTitle}>
+            {mode === 'create' ? 'Adicionar corredor' : 'Editar corredor'}
+          </AppText>
+          <AppText muted style={styles.modalDescription}>
+            Informe o nome do corredor como ele aparece no mercado.
+          </AppText>
+
+          <TextInput
+            value={name}
+            onChangeText={(value) => {
+              setName(value);
+              if (error) setError(null);
+            }}
+            placeholder="Ex.: Açougue"
+            placeholderTextColor={theme.colors.textSubtle}
+            style={styles.modalInput}
+            autoCorrect={false}
+            autoFocus
+          />
+
+          {suggestion ? (
+            <View style={styles.suggestionBox}>
+              <View style={styles.suggestionTextContainer}>
+                <AppText variant="caption" style={styles.suggestionLabel}>Sugestão</AppText>
+                <AppText style={styles.suggestionText}>{suggestion}</AppText>
+              </View>
+              <Pressable
+                onPress={() => {
+                  setName(suggestion);
+                  setError(null);
+                }}
+                style={({ pressed }) => [styles.suggestionButton, pressed ? styles.pressed : null]}
+              >
+                <AppText variant="caption" style={styles.suggestionButtonText}>Usar</AppText>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {error ? (
+            <AppText variant="caption" style={styles.validationMessage}>{error}</AppText>
+          ) : null}
+
+          <View style={styles.modalActions}>
+            <Pressable
+              onPress={onCancel}
+              disabled={isSaving}
+              style={({ pressed }) => [styles.modalButton, styles.modalCancelButton, pressed ? styles.pressed : null]}
+            >
+              <AppText variant="caption" style={styles.modalCancelText}>Cancelar</AppText>
+            </Pressable>
+
+            <Pressable
+              onPress={handleSave}
+              disabled={isSaving}
+              style={({ pressed }) => [styles.modalButton, styles.modalPrimaryButton, pressed ? styles.pressed : null]}
+            >
+              <AppText variant="caption" style={styles.modalPrimaryText}>Salvar</AppText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+interface ConfirmDeleteSectionModalProps {
+  visible: boolean;
+  sectionName: string;
+  isSaving: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function ConfirmDeleteSectionModal({ visible, sectionName, isSaving, onCancel, onConfirm }: ConfirmDeleteSectionModalProps) {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <AppText variant="subtitle" style={styles.modalTitle}>Apagar corredor?</AppText>
+          <AppText muted style={styles.modalDescription}>
+            Você está prestes a apagar "{sectionName}" desta configuração. Produtos e históricos existentes não serão apagados.
+          </AppText>
+
+          <View style={styles.modalActions}>
+            <Pressable
+              disabled={isSaving}
+              onPress={onCancel}
+              style={({ pressed }) => [styles.modalButton, styles.modalCancelButton, pressed ? styles.pressed : null]}
+            >
+              <AppText variant="caption" style={styles.modalCancelText}>Cancelar</AppText>
+            </Pressable>
+
+            <Pressable
+              disabled={isSaving}
+              onPress={onConfirm}
+              style={({ pressed }) => [styles.modalButton, styles.modalDangerButton, pressed ? styles.pressed : null]}
+            >
+              <AppText variant="caption" style={styles.modalDangerText}>Apagar</AppText>
             </Pressable>
           </View>
         </View>
@@ -504,6 +1038,75 @@ function RouteButton({ label, disabled, loading, onPress }: RouteButtonProps) {
   );
 }
 
+interface SmallActionButtonProps {
+  label: string;
+  disabled: boolean;
+  danger?: boolean;
+  onPress: () => void;
+}
+
+function SmallActionButton({ label, disabled, danger = false, onPress }: SmallActionButtonProps) {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  return (
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.smallActionButton,
+        danger ? styles.smallDangerButton : null,
+        disabled ? styles.secondaryActionButtonDisabled : null,
+        pressed && !disabled ? styles.pressed : null,
+      ]}
+    >
+      <AppText variant="caption" style={[styles.smallActionButtonText, danger ? styles.smallDangerButtonText : null]}>
+        {label}
+      </AppText>
+    </Pressable>
+  );
+}
+
+function normalizeInputName(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function normalizeEditableSections<TSection extends EditableSection>(sections: TSection[]): TSection[] {
+  return [...sections]
+    .filter((section) => Boolean(section.name.trim()))
+    .sort((left, right) => left.routeOrder - right.routeOrder)
+    .map((section, index) => ({
+      ...section,
+      name: normalizeInputName(section.name),
+      routeOrder: index + 1,
+      isActive: section.isActive !== false,
+    }));
+}
+
+function reorderEditableSections(sections: EditableSection[], sectionId: string, direction: MarketSectionMoveDirection): EditableSection[] {
+  const orderedSections = normalizeEditableSections(sections);
+  const currentIndex = orderedSections.findIndex((section) => section.id === sectionId);
+
+  if (currentIndex < 0) {
+    return orderedSections;
+  }
+
+  const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+
+  if (targetIndex < 0 || targetIndex >= orderedSections.length) {
+    return orderedSections;
+  }
+
+  const nextSections = [...orderedSections];
+  const [selectedSection] = nextSections.splice(currentIndex, 1);
+  nextSections.splice(targetIndex, 0, selectedSection);
+
+  return nextSections.map((section, index) => ({
+    ...section,
+    routeOrder: index + 1,
+  }));
+}
+
 function createStyles(theme: ReturnType<typeof useAppTheme>) {
   return StyleSheet.create({
     centeredContainer: {
@@ -539,6 +1142,22 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     },
     createButton: {
       width: '100%',
+    },
+    defaultSectionsCard: {
+      padding: theme.spacing.lg,
+    },
+    defaultSectionsHeader: {
+      gap: theme.spacing.md,
+    },
+    defaultSectionsTextContainer: {
+      gap: theme.spacing.xs,
+    },
+    defaultSectionsCount: {
+      marginTop: theme.spacing.xs,
+      fontWeight: '800',
+    },
+    listTitleBlock: {
+      gap: theme.spacing.xs,
     },
     card: {
       padding: 0,
@@ -625,11 +1244,27 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       paddingHorizontal: theme.spacing.xl,
       paddingTop: theme.spacing.lg,
       paddingBottom: theme.spacing.md,
+      gap: theme.spacing.md,
+    },
+    sectionIntroText: {
+      gap: theme.spacing.xs,
     },
     sectionHint: {
       marginTop: theme.spacing.xs,
       fontSize: 13,
       lineHeight: 19,
+    },
+    editSectionsButton: {
+      minHeight: 38,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.colors.primarySoft,
+      paddingHorizontal: theme.spacing.md,
+    },
+    editSectionsButtonText: {
+      color: theme.colors.primaryStrong,
+      fontWeight: '900',
     },
     sectionsList: {
       borderTopWidth: 1,
@@ -712,6 +1347,10 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       shadowRadius: 30,
       elevation: 8,
     },
+    sectionEditorCard: {
+      maxWidth: 430,
+      maxHeight: '86%',
+    },
     modalTitle: {
       color: theme.colors.text,
     },
@@ -736,6 +1375,96 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       color: theme.mode === 'dark' ? '#FCA5A5' : '#B91C1C',
       fontWeight: '800',
     },
+    addSectionButton: {
+      minHeight: 42,
+      marginTop: theme.spacing.lg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.colors.primarySoft,
+      paddingHorizontal: theme.spacing.md,
+    },
+    addSectionButtonText: {
+      color: theme.colors.primaryStrong,
+      fontWeight: '900',
+    },
+    sectionEditorList: {
+      marginTop: theme.spacing.lg,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: theme.radius.lg,
+      backgroundColor: theme.colors.card,
+    },
+    sectionEditorListContent: {
+      paddingVertical: theme.spacing.xs,
+    },
+    editorSectionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.md,
+      paddingVertical: theme.spacing.md,
+      paddingHorizontal: theme.spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+    },
+    editorSectionActions: {
+      width: 88,
+      gap: 6,
+    },
+    editorMoveActions: {
+      gap: 6,
+    },
+    smallActionButton: {
+      minHeight: 30,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: theme.radius.md,
+      paddingHorizontal: theme.spacing.xs,
+      backgroundColor: theme.colors.primarySoft,
+    },
+    smallActionButtonText: {
+      color: theme.colors.primaryStrong,
+      fontWeight: '900',
+    },
+    smallDangerButton: {
+      backgroundColor: theme.mode === 'dark' ? 'rgba(248, 113, 113, 0.16)' : '#FEE2E2',
+    },
+    smallDangerButtonText: {
+      color: theme.mode === 'dark' ? '#FCA5A5' : '#B91C1C',
+    },
+    suggestionBox: {
+      marginTop: theme.spacing.md,
+      borderRadius: theme.radius.lg,
+      padding: theme.spacing.md,
+      backgroundColor: theme.colors.primarySoft,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.md,
+    },
+    suggestionTextContainer: {
+      flex: 1,
+      gap: 2,
+    },
+    suggestionLabel: {
+      color: theme.colors.primaryStrong,
+      fontWeight: '900',
+    },
+    suggestionText: {
+      color: theme.colors.primaryStrong,
+      fontWeight: '900',
+    },
+    suggestionButton: {
+      minHeight: 34,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.colors.primary,
+      paddingHorizontal: theme.spacing.md,
+    },
+    suggestionButtonText: {
+      color: theme.colors.primaryText,
+      fontWeight: '900',
+    },
     modalActions: {
       flexDirection: 'row',
       justifyContent: 'flex-end',
@@ -754,12 +1483,19 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     modalPrimaryButton: {
       backgroundColor: theme.colors.primary,
     },
+    modalDangerButton: {
+      backgroundColor: theme.mode === 'dark' ? '#7F1D1D' : '#DC2626',
+    },
     modalCancelText: {
       color: theme.colors.textMuted,
       fontWeight: '900',
     },
     modalPrimaryText: {
       color: theme.colors.primaryText,
+      fontWeight: '900',
+    },
+    modalDangerText: {
+      color: '#FFFFFF',
       fontWeight: '900',
     },
     pressed: {

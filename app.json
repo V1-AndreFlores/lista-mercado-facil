@@ -1,5 +1,15 @@
 {
   "plugins": [
     "expo-sqlite"
-  ]
+  ],
+  "extra": {
+    "eas": {
+      "projectId": "4c4ca9bc-ec07-4190-896b-cbcac2a91b73"
+    }
+  },
+  "expo": {
+    "android": {
+      "package": "com.andre.alves.listamercadofacil"
+    }
+  }
 }
