@@ -255,7 +255,10 @@ export function ShoppingListScreen() {
       );
       const typedUnitPriceCents = parseCurrencyInputToCents(productUnitPrice);
       const latestUnitPriceCents = typedUnitPriceCents
-        ?? await shoppingListRepository.getLatestUnitPriceCentsByProduct(generatedItem.normalizedName);
+        ?? await tryResolveLatestUnitPriceCents(
+          shoppingListRepository,
+          generatedItem.normalizedName,
+        );
       const newItem: ShoppingListItem = {
         ...(preference
           ? {
@@ -2072,6 +2075,35 @@ function formatQuantityValue(quantity: number): string {
   }
 
   return String(Math.trunc(quantity));
+}
+
+async function tryResolveLatestUnitPriceCents(
+  repository: {
+    getLatestUnitPriceCentsByProduct?: (productNormalizedName: string) => Promise<number | null>;
+  },
+  productNormalizedName: string,
+): Promise<number | undefined> {
+  if (typeof repository.getLatestUnitPriceCentsByProduct !== "function") {
+    return undefined;
+  }
+
+  try {
+    const latestUnitPriceCents = await repository.getLatestUnitPriceCentsByProduct(
+      productNormalizedName,
+    );
+
+    if (
+      typeof latestUnitPriceCents === "number"
+      && Number.isFinite(latestUnitPriceCents)
+      && latestUnitPriceCents > 0
+    ) {
+      return Math.trunc(latestUnitPriceCents);
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
 }
 
 function formatItemName(item: ShoppingListItem): string {
