@@ -122,12 +122,14 @@ export class WebShoppingListRepository implements ShoppingListRepository {
   }
 
   async reuseListAsActive(sourceListId: string, name: string): Promise<ShoppingList> {
-    const sourceList = await this.getById(sourceListId);
+    const lists = await this.readLists();
+    const sourceList = lists.find((list) => list.id === sourceListId) ?? null;
 
     if (!sourceList) {
       throw new Error('Lista de origem não encontrada.');
     }
 
+    const latestUnitPrices = this.resolveLatestUnitPricesByProduct(lists);
     const now = new Date().toISOString();
     const listId = createId();
     const reusedList: ShoppingList = {
@@ -135,25 +137,34 @@ export class WebShoppingListRepository implements ShoppingListRepository {
       marketId: sourceList.marketId,
       name: resolveShoppingListName(name),
       status: 'active',
-      items: sourceList.items.map((item) => ({
-        ...item,
-        id: createId(),
-        listId,
-        isPurchased: false,
-        createdAt: now,
-        updatedAt: now,
-      })),
+      items: sourceList.items.map((item) => {
+        const latestUnitPriceCents = latestUnitPrices[item.normalizedName] ?? item.unitPriceCents;
+
+        return this.normalizeItem({
+          ...item,
+          id: createId(),
+          listId,
+          unitPriceCents: latestUnitPriceCents,
+          isPurchased: false,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }),
       createdAt: now,
       updatedAt: now,
     };
 
-    const lists = await this.readLists();
     await this.writeLists([...lists, reusedList]);
     await AsyncStorage.setItem(activeShoppingListIdStorageKey, reusedList.id);
 
     return reusedList;
   }
 
+  async getLatestUnitPriceCentsByProduct(productNormalizedName: string): Promise<number | null> {
+    const lists = await this.readLists();
+    const latestUnitPrices = this.resolveLatestUnitPricesByProduct(lists);
+    return latestUnitPrices[productNormalizedName] ?? null;
+  }
 
   async deleteList(listId: string): Promise<void> {
     const lists = await this.readLists();
@@ -230,6 +241,25 @@ export class WebShoppingListRepository implements ShoppingListRepository {
       unit: (unit || 'un') as ShoppingListItem['unit'],
       updatedAt: now,
     }));
+  }
+
+  async updateItemUnitPrice(itemId: string, unitPriceCents: number | null): Promise<void> {
+    await this.updateItem(itemId, (item, now) => {
+      if (typeof unitPriceCents === 'number' && Number.isFinite(unitPriceCents) && unitPriceCents > 0) {
+        return {
+          ...item,
+          unitPriceCents: Math.trunc(unitPriceCents),
+          updatedAt: now,
+        };
+      }
+
+      const { unitPriceCents: _removedUnitPriceCents, ...itemWithoutUnitPrice } = item;
+
+      return {
+        ...itemWithoutUnitPrice,
+        updatedAt: now,
+      };
+    });
   }
 
   async removeItem(itemId: string): Promise<void> {
@@ -334,12 +364,45 @@ export class WebShoppingListRepository implements ShoppingListRepository {
       name: resolveShoppingListName(list.name),
       status: list.status ?? 'active',
       items: Array.isArray(list.items)
-        ? list.items.map((item) => ({
-            ...item,
-            quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
-            unit: (item.unit ?? 'un') as ShoppingListItem['unit'],
-          }))
+        ? list.items.map((item) => this.normalizeItem(item))
         : [],
     };
+  }
+
+  private normalizeItem(item: ShoppingListItem): ShoppingListItem {
+    const normalizedItem: ShoppingListItem = {
+      ...item,
+      quantity: typeof item.quantity === 'number' && item.quantity > 0 ? Math.trunc(item.quantity) : 1,
+      unit: (item.unit ?? 'un') as ShoppingListItem['unit'],
+    };
+
+    if (typeof item.unitPriceCents === 'number' && Number.isFinite(item.unitPriceCents) && item.unitPriceCents > 0) {
+      normalizedItem.unitPriceCents = Math.trunc(item.unitPriceCents);
+    } else {
+      delete normalizedItem.unitPriceCents;
+    }
+
+    return normalizedItem;
+  }
+
+  private resolveLatestUnitPricesByProduct(lists: ShoppingList[]): Record<string, number> {
+    const latestUnitPrices: Record<string, number> = {};
+    const completedLists = lists
+      .filter((list) => list.status === 'completed')
+      .sort((left, right) => (right.completedAt ?? right.updatedAt).localeCompare(left.completedAt ?? left.updatedAt));
+
+    for (const list of completedLists) {
+      for (const item of list.items) {
+        if (latestUnitPrices[item.normalizedName]) {
+          continue;
+        }
+
+        if (typeof item.unitPriceCents === 'number' && Number.isFinite(item.unitPriceCents) && item.unitPriceCents > 0) {
+          latestUnitPrices[item.normalizedName] = Math.trunc(item.unitPriceCents);
+        }
+      }
+    }
+
+    return latestUnitPrices;
   }
 }

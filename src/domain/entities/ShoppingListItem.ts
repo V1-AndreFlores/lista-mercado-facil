@@ -18,6 +18,7 @@ export interface ShoppingListItem {
   normalizedName: string;
   quantity: number;
   unit: ShoppingListItemUnit;
+  unitPriceCents?: number;
   sectionName: string;
   categoryId?: string;
   isPurchased: boolean;

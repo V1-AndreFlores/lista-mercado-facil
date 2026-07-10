@@ -109,6 +109,38 @@ const shoppingListSlice = createSlice({
       item.updatedAt = updatedAt;
       updateListTimestamp(state.activeList);
     },
+    updateShoppingListItemUnitPrice(
+      state,
+      action: PayloadAction<{
+        itemId: string;
+        unitPriceCents?: number;
+        updatedAt?: string;
+      }>,
+    ) {
+      if (!state.activeList) {
+        return;
+      }
+
+      const item = state.activeList.items.find(
+        (currentItem) => currentItem.id === action.payload.itemId,
+      );
+
+      if (!item) {
+        return;
+      }
+
+      const updatedAt = action.payload.updatedAt ?? new Date().toISOString();
+      const unitPriceCents = action.payload.unitPriceCents;
+
+      if (typeof unitPriceCents === "number" && Number.isFinite(unitPriceCents) && unitPriceCents > 0) {
+        item.unitPriceCents = Math.trunc(unitPriceCents);
+      } else {
+        delete item.unitPriceCents;
+      }
+
+      item.updatedAt = updatedAt;
+      updateListTimestamp(state.activeList);
+    },
     removeShoppingListItem(state, action: PayloadAction<string>) {
       if (!state.activeList) {
         return;
@@ -139,6 +171,7 @@ export const {
   toggleShoppingListItemPurchased,
   updateShoppingListItemSection,
   updateShoppingListItemQuantityAndUnit,
+  updateShoppingListItemUnitPrice,
 } = shoppingListSlice.actions;
 
 export default shoppingListSlice.reducer;

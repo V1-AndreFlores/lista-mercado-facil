@@ -24,6 +24,7 @@ import { createShoppingListRepository } from "../../infrastructure/repositories/
 import { createUserProductPreferenceRepository } from "../../infrastructure/repositories/UserProductPreferenceRepositoryFactory";
 import { useAppDispatch, useAppSelector } from "../../app/store/hooks";
 import { createId } from "../../shared/utils/createId";
+import { formatCurrencyCents, maskCurrencyInput, multiplyCurrencyCents, parseCurrencyInputToCents } from "../../shared/utils/money";
 import { setSelectedMarketId } from "../../app/store/slices/marketSlice";
 import {
   addShoppingListItem,
@@ -33,6 +34,7 @@ import {
   toggleShoppingListItemPurchased,
   updateShoppingListItemQuantityAndUnit,
   updateShoppingListItemSection,
+  updateShoppingListItemUnitPrice,
 } from "../../app/store/slices/shoppingListSlice";
 import { AppButton } from "../components/AppButton";
 import { AppCard } from "../components/AppCard";
@@ -54,6 +56,7 @@ export function ShoppingListScreen() {
   const [screenError, setScreenError] = useState<string | null>(null);
   const [productName, setProductName] = useState("");
   const [productQuantity, setProductQuantity] = useState(defaultProductQuantity);
+  const [productUnitPrice, setProductUnitPrice] = useState("");
   const [productError, setProductError] = useState<string | null>(null);
   const [isClearConfirmationVisible, setIsClearConfirmationVisible] =
     useState(false);
@@ -79,6 +82,7 @@ export function ShoppingListScreen() {
   const [itemPendingQuantityEdit, setItemPendingQuantityEdit] =
     useState<ShoppingListItem | null>(null);
   const [quantityEditValue, setQuantityEditValue] = useState(defaultProductQuantity);
+  const [unitPriceEditValue, setUnitPriceEditValue] = useState("");
   const [quantityEditError, setQuantityEditError] = useState<string | null>(null);
   const theme = useAppTheme();
   const styles = createStyles(theme);
@@ -101,6 +105,17 @@ export function ShoppingListScreen() {
   const purchasedItems =
     activeList?.items.filter((item) => item.isPurchased).length ?? 0;
   const pendingItems = totalItems - purchasedItems;
+  const purchasedTotalCents = useMemo(
+    () => activeList?.items.reduce((total, item) => {
+      if (!item.isPurchased) {
+        return total;
+      }
+
+      return total + multiplyCurrencyCents(item.unitPriceCents, item.quantity);
+    }, 0) ?? 0,
+    [activeList],
+  );
+  const shouldShowPurchaseTotal = purchasedTotalCents > 0;
   const trimmedProductName = productName.trim();
   const parsedProductQuantity = resolveQuantityInput(productQuantity);
   const isDuplicateProduct = activeList
@@ -203,6 +218,14 @@ export function ShoppingListScreen() {
     setProductQuantity(formatQuantityValue(resolveQuantityInput(productQuantity)));
   }
 
+  function handleProductUnitPriceChange(value: string) {
+    setProductUnitPrice(maskCurrencyInput(value));
+
+    if (productError) {
+      setProductError(null);
+    }
+  }
+
   async function handleAddItem() {
     if (!trimmedProductName || !activeList || !market || isSaving) {
       return;
@@ -232,19 +255,26 @@ export function ShoppingListScreen() {
         generatedItem.normalizedName,
         market.id,
       );
-      const newItem = preference
-        ? {
-            ...generatedItem,
-            sectionName: preference.preferredSectionName,
-            updatedAt: new Date().toISOString(),
-          }
-        : generatedItem;
+      const typedUnitPriceCents = parseCurrencyInputToCents(productUnitPrice);
+      const latestUnitPriceCents = typedUnitPriceCents
+        ?? await shoppingListRepository.getLatestUnitPriceCentsByProduct(generatedItem.normalizedName);
+      const newItem: ShoppingListItem = {
+        ...(preference
+          ? {
+              ...generatedItem,
+              sectionName: preference.preferredSectionName,
+              updatedAt: new Date().toISOString(),
+            }
+          : generatedItem),
+        ...(latestUnitPriceCents ? { unitPriceCents: latestUnitPriceCents } : {}),
+      };
 
       await shoppingListRepository.addItem(newItem);
 
       dispatch(addShoppingListItem(newItem));
       setProductName("");
       setProductQuantity(defaultProductQuantity);
+      setProductUnitPrice("");
       setProductError(null);
       Keyboard.dismiss();
     } catch {
@@ -380,6 +410,7 @@ export function ShoppingListScreen() {
 
     setItemPendingQuantityEdit(item);
     setQuantityEditValue(formatQuantityValue(item.quantity));
+    setUnitPriceEditValue(formatCurrencyCents(item.unitPriceCents));
     setQuantityEditError(null);
   }
 
@@ -390,6 +421,7 @@ export function ShoppingListScreen() {
 
     setItemPendingQuantityEdit(null);
     setQuantityEditValue(defaultProductQuantity);
+    setUnitPriceEditValue("");
     setQuantityEditError(null);
   }
 
@@ -405,12 +437,21 @@ export function ShoppingListScreen() {
     setQuantityEditValue(formatQuantityValue(resolveQuantityInput(quantityEditValue)));
   }
 
+  function handleUnitPriceEditValueChange(value: string) {
+    setUnitPriceEditValue(maskCurrencyInput(value));
+
+    if (quantityEditError) {
+      setQuantityEditError(null);
+    }
+  }
+
   async function handleConfirmEditItemQuantity() {
     if (!itemPendingQuantityEdit || isSaving) {
       return;
     }
 
     const parsedQuantity = resolveQuantityInput(quantityEditValue);
+    const unitPriceCents = parseCurrencyInputToCents(unitPriceEditValue);
 
     setIsSaving(true);
     setQuantityEditValue(formatQuantityValue(parsedQuantity));
@@ -425,6 +466,10 @@ export function ShoppingListScreen() {
         parsedQuantity,
         defaultProductUnit,
       );
+      await shoppingListRepository.updateItemUnitPrice(
+        itemPendingQuantityEdit.id,
+        unitPriceCents ?? null,
+      );
 
       dispatch(
         updateShoppingListItemQuantityAndUnit({
@@ -434,10 +479,18 @@ export function ShoppingListScreen() {
           updatedAt: now,
         }),
       );
+      dispatch(
+        updateShoppingListItemUnitPrice({
+          itemId: itemPendingQuantityEdit.id,
+          unitPriceCents,
+          updatedAt: now,
+        }),
+      );
 
       setItemPendingQuantityEdit(null);
       setQuantityEditValue(defaultProductQuantity);
-      } finally {
+      setUnitPriceEditValue("");
+    } finally {
       setIsSaving(false);
     }
   }
@@ -796,6 +849,18 @@ export function ShoppingListScreen() {
             <SummaryPill label="Total" value={totalItems} />
           </View>
 
+          {shouldShowPurchaseTotal ? (
+            <AppCard elevated style={styles.purchaseTotalCard}>
+              <AppText variant="label" accent>Total no carrinho</AppText>
+              <AppText variant="headline" style={styles.purchaseTotalValue}>
+                {formatCurrencyCents(purchasedTotalCents)}
+              </AppText>
+              <AppText muted style={styles.purchaseTotalHint}>
+                Soma dos itens marcados como comprados com preço informado.
+              </AppText>
+            </AppCard>
+          ) : null}
+
           <View style={styles.activeListActions}>
             <Pressable
               onPress={handleRequestCreateList}
@@ -856,8 +921,8 @@ export function ShoppingListScreen() {
                   Adicionar produto
                 </AppText>
                 <AppText muted style={styles.formSubtitle}>
-                  Digite um item por vez. Informe a quantidade quando
-                  necessário.
+                  Digite um item por vez. Informe quantidade e, se quiser,
+                  preço unitário.
                 </AppText>
               </View>
             </View>
@@ -873,17 +938,29 @@ export function ShoppingListScreen() {
                 autoCorrect={false}
               />
 
-              <TextInput
-                value={productQuantity}
-                onChangeText={handleProductQuantityChange}
-                placeholder="Quantidade"
-                placeholderTextColor={theme.colors.textSubtle}
-                style={[styles.input, styles.quantityInput]}
-                keyboardType="number-pad"
-                returnKeyType="done"
-                onBlur={handleProductQuantityBlur}
-                onSubmitEditing={handleAddItem}
-              />
+              <View style={styles.productDetailsRow}>
+                <TextInput
+                  value={productQuantity}
+                  onChangeText={handleProductQuantityChange}
+                  placeholder="Quantidade"
+                  placeholderTextColor={theme.colors.textSubtle}
+                  style={[styles.input, styles.quantityInput]}
+                  keyboardType="number-pad"
+                  returnKeyType="next"
+                  onBlur={handleProductQuantityBlur}
+                />
+
+                <TextInput
+                  value={productUnitPrice}
+                  onChangeText={handleProductUnitPriceChange}
+                  placeholder="Preço unit."
+                  placeholderTextColor={theme.colors.textSubtle}
+                  style={[styles.input, styles.priceInput]}
+                  keyboardType="number-pad"
+                  returnKeyType="done"
+                  onSubmitEditing={handleAddItem}
+                />
+              </View>
             </View>
 
             {isDuplicateProduct || productError ? (
@@ -1043,9 +1120,11 @@ export function ShoppingListScreen() {
         visible={Boolean(itemPendingQuantityEdit)}
         itemName={itemPendingQuantityEdit?.name ?? ""}
         quantityValue={quantityEditValue}
+        unitPriceValue={unitPriceEditValue}
         error={quantityEditError}
         onChangeQuantity={handleQuantityEditValueChange}
         onBlurQuantity={handleQuantityEditBlur}
+        onChangeUnitPrice={handleUnitPriceEditValueChange}
         onCancel={handleCancelEditItemQuantity}
         onConfirm={handleConfirmEditItemQuantity}
       />
@@ -1747,9 +1826,11 @@ interface EditItemQuantityModalProps {
   visible: boolean;
   itemName: string;
   quantityValue: string;
+  unitPriceValue: string;
   error: string | null;
   onChangeQuantity: (value: string) => void;
   onBlurQuantity: () => void;
+  onChangeUnitPrice: (value: string) => void;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -1758,9 +1839,11 @@ function EditItemQuantityModal({
   visible,
   itemName,
   quantityValue,
+  unitPriceValue,
   error,
   onChangeQuantity,
   onBlurQuantity,
+  onChangeUnitPrice,
   onCancel,
   onConfirm,
 }: EditItemQuantityModalProps) {
@@ -1777,24 +1860,40 @@ function EditItemQuantityModal({
       <View style={styles.modalOverlay}>
         <View style={styles.modalCard}>
           <AppText variant="subtitle" style={styles.modalTitle}>
-            Editar quantidade
+            Editar produto
           </AppText>
           <AppText muted style={styles.modalDescription}>
-            Ajuste a quantidade de "{itemName}" sem alterar o setor do produto.
+            Ajuste a quantidade e o preço unitário de "{itemName}".
           </AppText>
 
           <View style={styles.modalQuantityBlock}>
-            <TextInput
-              value={quantityValue}
-              onChangeText={onChangeQuantity}
-              placeholder="1"
-              placeholderTextColor={theme.colors.textSubtle}
-              style={[styles.input, styles.modalQuantityInput]}
-              keyboardType="number-pad"
-              returnKeyType="done"
-              onBlur={onBlurQuantity}
-              onSubmitEditing={onConfirm}
-            />
+            <View style={styles.modalInputGroup}>
+              <AppText variant="caption" style={styles.modalInputLabel}>Quantidade</AppText>
+              <TextInput
+                value={quantityValue}
+                onChangeText={onChangeQuantity}
+                placeholder="1"
+                placeholderTextColor={theme.colors.textSubtle}
+                style={[styles.input, styles.modalQuantityInput]}
+                keyboardType="number-pad"
+                returnKeyType="next"
+                onBlur={onBlurQuantity}
+              />
+            </View>
+
+            <View style={styles.modalInputGroup}>
+              <AppText variant="caption" style={styles.modalInputLabel}>Preço unitário</AppText>
+              <TextInput
+                value={unitPriceValue}
+                onChangeText={onChangeUnitPrice}
+                placeholder="Opcional"
+                placeholderTextColor={theme.colors.textSubtle}
+                style={[styles.input, styles.modalQuantityInput]}
+                keyboardType="number-pad"
+                returnKeyType="done"
+                onSubmitEditing={onConfirm}
+              />
+            </View>
           </View>
 
           {error ? (
@@ -1898,6 +1997,11 @@ function ShoppingItemRow({
         <AppText variant="caption" subtle style={styles.itemQuantityText}>
           {item.isPurchased ? "Comprado" : "Pendente"} · {item.sectionName}
         </AppText>
+        {item.unitPriceCents ? (
+          <AppText variant="caption" style={styles.itemPriceText}>
+            {formatItemPrice(item)}
+          </AppText>
+        ) : null}
       </Pressable>
 
       <View style={styles.itemActions}>
@@ -1921,7 +2025,7 @@ function ShoppingItemRow({
           ]}
         >
           <AppText variant="caption" style={styles.itemActionButtonText}>
-            Qtde
+            Editar
           </AppText>
         </Pressable>
 
@@ -1968,6 +2072,16 @@ function formatQuantityValue(quantity: number): string {
   }
 
   return String(Math.trunc(quantity));
+}
+
+function formatItemPrice(item: ShoppingListItem): string {
+  const itemTotalCents = multiplyCurrencyCents(item.unitPriceCents, item.quantity);
+
+  if (!item.unitPriceCents || itemTotalCents <= 0) {
+    return "";
+  }
+
+  return `${formatCurrencyCents(item.unitPriceCents)} un. · Total ${formatCurrencyCents(itemTotalCents)}`;
 }
 
 function formatItemName(item: ShoppingListItem): string {
@@ -2032,6 +2146,18 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       marginTop: 2,
       fontWeight: "700",
     },
+    purchaseTotalCard: {
+      padding: theme.spacing.lg,
+    },
+    purchaseTotalValue: {
+      marginTop: theme.spacing.xs,
+      color: theme.colors.primary,
+    },
+    purchaseTotalHint: {
+      marginTop: theme.spacing.xs,
+      fontSize: 13,
+      lineHeight: 18,
+    },
     activeListActions: {
       flexDirection: "row",
       gap: theme.spacing.sm,
@@ -2073,13 +2199,28 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     inputRow: {
       gap: theme.spacing.sm,
     },
+    productDetailsRow: {
+      flexDirection: "row",
+      alignItems: "stretch",
+      width: "100%",
+      gap: theme.spacing.sm,
+    },
     quantityRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: theme.spacing.sm,
     },
     quantityInput: {
-      width: "100%",
+      flex: 0,
+      width: 96,
+      minWidth: 82,
+      paddingHorizontal: theme.spacing.md,
+      textAlign: "center",
+    },
+    priceInput: {
+      flex: 1,
+      minWidth: 0,
+      paddingHorizontal: theme.spacing.md,
       textAlign: "center",
     },
     unitOptions: {
@@ -2111,6 +2252,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       fontWeight: "900",
     },
     input: {
+      minWidth: 0,
       minHeight: 54,
       borderWidth: 1,
       borderColor: theme.colors.border,
@@ -2264,6 +2406,11 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       marginTop: 2,
       fontWeight: "800",
     },
+    itemPriceText: {
+      marginTop: 2,
+      color: theme.colors.primaryStrong,
+      fontWeight: "900",
+    },
     itemActions: {
       width: 88,
       gap: 6,
@@ -2349,6 +2496,13 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     modalQuantityBlock: {
       marginTop: theme.spacing.lg,
       gap: theme.spacing.md,
+    },
+    modalInputGroup: {
+      gap: theme.spacing.xs,
+    },
+    modalInputLabel: {
+      color: theme.colors.textMuted,
+      fontWeight: "900",
     },
     modalQuantityInput: {
       width: "100%",

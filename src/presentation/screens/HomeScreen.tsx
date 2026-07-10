@@ -6,6 +6,7 @@ import { RootStackParamList } from '../../app/navigation/AppNavigator';
 import { useAppDispatch } from '../../app/store/hooks';
 import { setSelectedMarketId } from '../../app/store/slices/marketSlice';
 import { setActiveList } from '../../app/store/slices/shoppingListSlice';
+import { formatCurrencyCents, multiplyCurrencyCents } from '../../shared/utils/money';
 import { ShoppingList } from '../../domain/entities/ShoppingList';
 import { defaultShoppingListName } from '../../domain/constants/shoppingListDefaults';
 import { AppSettingsRepository } from '../../infrastructure/repositories/AppSettingsRepository';
@@ -244,6 +245,7 @@ function HistoryListCard({
   const theme = useAppTheme();
   const styles = createStyles(theme);
   const completedDateTime = formatDateTime(list.completedAt ?? list.updatedAt);
+  const completedTotalCents = calculatePurchasedTotalCents(list);
   const isBusy = isReusing || isDeleting;
 
   return (
@@ -259,6 +261,11 @@ function HistoryListCard({
           <AppText muted style={styles.historyListMeta}>
             {marketName}
           </AppText>
+          {completedTotalCents > 0 ? (
+            <AppText variant="caption" style={styles.historyListTotal}>
+              Total comprado: {formatCurrencyCents(completedTotalCents)}
+            </AppText>
+          ) : null}
         </View>
 
         <View style={styles.historyActions}>
@@ -359,6 +366,16 @@ function ConfirmDeleteHistoryListModal({
   );
 }
 
+function calculatePurchasedTotalCents(list: ShoppingList): number {
+  return list.items.reduce((total, item) => {
+    if (!item.isPurchased) {
+      return total;
+    }
+
+    return total + multiplyCurrencyCents(item.unitPriceCents, item.quantity);
+  }, 0);
+}
+
 function formatDateTime(value: string): string {
   const date = new Date(value);
 
@@ -449,6 +466,11 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       marginTop: 4,
       fontSize: 13,
       lineHeight: 18,
+    },
+    historyListTotal: {
+      marginTop: 6,
+      color: theme.colors.primaryStrong,
+      fontWeight: '900',
     },
     historyActions: {
       gap: theme.spacing.sm,
