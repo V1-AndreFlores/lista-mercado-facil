@@ -1,11 +1,11 @@
-import { ShoppingList } from "../../../domain/entities/ShoppingList";
-import { ShoppingListItem, ShoppingListItemUnit, shoppingListItemUnits } from "../../../domain/entities/ShoppingListItem";
+import { ShoppingList } from '../../../domain/entities/ShoppingList';
+import { ShoppingListItem } from '../../../domain/entities/ShoppingListItem';
 
 export interface ShoppingListRow {
   id: string;
   market_id: string;
   name: string;
-  status?: string | null;
+  status?: ShoppingList['status'];
   completed_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -18,40 +18,23 @@ export interface ShoppingListItemRow {
   normalized_name: string;
   quantity: string | number | null;
   unit?: string | null;
+  unit_price_cents?: number | null;
   section_name: string;
-  category_id: string | null;
+  category_id?: string | null;
   is_purchased: number;
   created_at: string;
   updated_at: string;
-}
-
-export function mapShoppingListItemRow(row: ShoppingListItemRow): ShoppingListItem {
-  return {
-    id: row.id,
-    listId: row.list_id,
-    name: row.name,
-    normalizedName: row.normalized_name,
-    quantity: parsePersistedQuantity(row.quantity),
-    unit: parsePersistedUnit(row.unit),
-    sectionName: row.section_name,
-    categoryId: row.category_id ?? undefined,
-    isPurchased: row.is_purchased === 1,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
 }
 
 export function mapShoppingListRow(
   row: ShoppingListRow,
   itemRows: ShoppingListItemRow[],
 ): ShoppingList {
-  const status = row.status === "completed" ? "completed" : "active";
-
   return {
     id: row.id,
     marketId: row.market_id,
     name: row.name,
-    status,
+    status: row.status ?? 'active',
     completedAt: row.completed_at ?? undefined,
     items: itemRows.map(mapShoppingListItemRow),
     createdAt: row.created_at,
@@ -59,24 +42,26 @@ export function mapShoppingListRow(
   };
 }
 
-function parsePersistedQuantity(value: string | number | null): number {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    return value;
+function mapShoppingListItemRow(row: ShoppingListItemRow): ShoppingListItem {
+  const quantity = Number(row.quantity);
+  const unitPriceCents = Number(row.unit_price_cents);
+  const item: ShoppingListItem = {
+    id: row.id,
+    listId: row.list_id,
+    name: row.name,
+    normalizedName: row.normalized_name,
+    quantity: Number.isFinite(quantity) && quantity > 0 ? Math.trunc(quantity) : 1,
+    unit: (row.unit || 'un') as ShoppingListItem['unit'],
+    sectionName: row.section_name,
+    categoryId: row.category_id ?? undefined,
+    isPurchased: row.is_purchased === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+
+  if (Number.isFinite(unitPriceCents) && unitPriceCents > 0) {
+    item.unitPriceCents = Math.trunc(unitPriceCents);
   }
 
-  if (typeof value === "string") {
-    const parsedValue = Number(value.replace(",", "."));
-
-    if (Number.isFinite(parsedValue) && parsedValue > 0) {
-      return parsedValue;
-    }
-  }
-
-  return 1;
-}
-
-function parsePersistedUnit(value?: string | null): ShoppingListItemUnit {
-  return shoppingListItemUnits.includes(value as ShoppingListItemUnit)
-    ? (value as ShoppingListItemUnit)
-    : "un";
+  return item;
 }
