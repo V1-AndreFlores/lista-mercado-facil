@@ -7,23 +7,27 @@ import { defaultMarkets } from '../seed/defaultMarkets';
 const marketsStorageKey = '@lista-mercado-facil:markets';
 const activeMarketStorageKey = '@lista-mercado-facil:active-market-id';
 const marketsVersionStorageKey = '@lista-mercado-facil:markets-version';
-const currentMarketsVersion = '2026-07-11-zaffari-fernandes-vieira-corredores-v5';
+const currentMarketsVersion = '2026-07-11-zaffari-fernandes-vieira-corredores-v7';
 const zaffariMarketId = 'market-zaffari-fernandes-vieira';
 const deletedZaffariMarketStorageKey = '@lista-mercado-facil:deleted-zaffari-market';
 
 export class WebMarketRepository implements MarketRepository {
   async getAll(): Promise<Market[]> {
-    const markets = await this.readMarkets();
+    const storedMarkets = await this.readMarkets();
 
-    if (markets.length > 0) {
-      const migratedMarkets = await this.migrateMarketsIfNeeded(markets);
+    if (storedMarkets.length > 0) {
+      const normalizedMarkets = storedMarkets.map((market) => this.normalizeMarket(market));
+      const migratedMarkets = await this.applyMandatoryMarketMigrations(normalizedMarkets);
+
+      await AsyncStorage.setItem(marketsVersionStorageKey, currentMarketsVersion);
       return migratedMarkets;
     }
 
-    await this.writeMarkets(defaultMarkets);
+    const initialMarkets = defaultMarkets.map((market) => this.normalizeMarket(market));
+    await this.writeMarkets(initialMarkets);
     await AsyncStorage.setItem(marketsVersionStorageKey, currentMarketsVersion);
-    await this.ensureActiveMarket(defaultMarkets);
-    return defaultMarkets;
+    await this.ensureActiveMarket(initialMarkets);
+    return initialMarkets;
   }
 
   async getById(id: string): Promise<Market | null> {
@@ -61,7 +65,7 @@ export class WebMarketRepository implements MarketRepository {
       ? markets.map((currentMarket) => (currentMarket.id === normalizedMarket.id ? normalizedMarket : currentMarket))
       : [...markets, normalizedMarket];
 
-    if (normalizedMarket.id === zaffariMarketId) {
+    if (this.isZaffariFernandesVieira(normalizedMarket)) {
       await AsyncStorage.removeItem(deletedZaffariMarketStorageKey);
     }
 
@@ -79,75 +83,67 @@ export class WebMarketRepository implements MarketRepository {
 
   async delete(id: string): Promise<void> {
     const markets = await this.getAll();
+    const marketToDelete = markets.find((market) => market.id === id) ?? null;
     const nextMarkets = markets.filter((market) => market.id !== id);
 
-    if (id === zaffariMarketId) {
+    if (marketToDelete && this.isZaffariFernandesVieira(marketToDelete)) {
       await AsyncStorage.setItem(deletedZaffariMarketStorageKey, 'true');
     }
 
     await this.writeMarkets(nextMarkets);
 
-    const activeMarketId = await this.getActiveMarketId();
-    if (activeMarketId === id) {
+    const storedActiveMarketId = await AsyncStorage.getItem(activeMarketStorageKey);
+    if (storedActiveMarketId === id) {
       await AsyncStorage.removeItem(activeMarketStorageKey);
       await this.ensureActiveMarket(nextMarkets);
     }
   }
 
-  private async migrateMarketsIfNeeded(markets: Market[]): Promise<Market[]> {
-    const version = await AsyncStorage.getItem(marketsVersionStorageKey);
-    const normalizedMarkets = markets.map((market) => this.normalizeMarket(market));
-    const [defaultZaffariMarket, wasZaffariDeleted] = await Promise.all([
-      Promise.resolve(defaultMarkets.find((market) => market.id === zaffariMarketId)),
-      AsyncStorage.getItem(deletedZaffariMarketStorageKey).then((value) => value === 'true'),
-    ]);
+  private async applyMandatoryMarketMigrations(markets: Market[]): Promise<Market[]> {
+    const defaultZaffariMarket = defaultMarkets.find((market) => this.isZaffariFernandesVieira(market));
+    const wasZaffariDeleted = (await AsyncStorage.getItem(deletedZaffariMarketStorageKey)) === 'true';
 
     if (!defaultZaffariMarket) {
-      await AsyncStorage.setItem(marketsVersionStorageKey, currentMarketsVersion);
-      return normalizedMarkets;
+      await this.writeMarkets(markets);
+      return markets;
     }
 
     let hasZaffariMarket = false;
 
-    const migratedMarkets = normalizedMarkets.map((market) => {
+    const nextMarkets = markets.map((market) => {
       if (!this.isZaffariFernandesVieira(market)) {
         return market;
       }
 
       hasZaffariMarket = true;
-
-      const { address: _removedAddress, ...marketWithoutAddress } = market;
-
-      return {
-        ...marketWithoutAddress,
-        name: defaultZaffariMarket.name,
-        isDefault: true,
-        sections: defaultZaffariMarket.sections.map((section) => ({
-          ...section,
-          marketId: market.id,
-        })),
-      };
+      return this.createCanonicalZaffariMarket(market, defaultZaffariMarket);
     });
 
-    const nextMarkets = hasZaffariMarket || wasZaffariDeleted
-      ? migratedMarkets
-      : [defaultZaffariMarket, ...migratedMarkets];
+    const migratedMarkets = hasZaffariMarket || wasZaffariDeleted
+      ? nextMarkets
+      : [defaultZaffariMarket, ...nextMarkets];
 
-    if (version !== currentMarketsVersion || JSON.stringify(nextMarkets) !== JSON.stringify(normalizedMarkets)) {
-      await this.writeMarkets(nextMarkets);
-    }
-
-    await AsyncStorage.setItem(marketsVersionStorageKey, currentMarketsVersion);
-
-    return nextMarkets;
+    await this.writeMarkets(migratedMarkets);
+    return migratedMarkets;
   }
 
-  private isZaffariFernandesVieira(market: Market): boolean {
-    if (market.id === zaffariMarketId) {
-      return true;
-    }
+  private createCanonicalZaffariMarket(currentMarket: Market, defaultZaffariMarket: Market): Market {
+    return this.normalizeMarket({
+      id: currentMarket.id,
+      name: defaultZaffariMarket.name,
+      isDefault: true,
+      sections: defaultZaffariMarket.sections.map((section) => ({
+        ...section,
+        marketId: currentMarket.id,
+      })),
+      createdAt: (currentMarket as Market & { createdAt?: string }).createdAt,
+      updatedAt: new Date().toISOString(),
+    } as Market & { createdAt?: string; updatedAt?: string });
+  }
 
-    return this.normalizeText(market.name) === this.normalizeText('Zaffari Fernandes Vieira');
+  private isZaffariFernandesVieira(market: Pick<Market, 'id' | 'name'>): boolean {
+    return market.id === zaffariMarketId
+      || this.normalizeText(market.name) === this.normalizeText('Zaffari Fernandes Vieira');
   }
 
   private normalizeText(value: string): string {
@@ -196,7 +192,8 @@ export class WebMarketRepository implements MarketRepository {
     }
 
     try {
-      return JSON.parse(rawValue) as Market[];
+      const parsedMarkets = JSON.parse(rawValue) as Market[];
+      return Array.isArray(parsedMarkets) ? parsedMarkets : [];
     } catch {
       await AsyncStorage.removeItem(marketsStorageKey);
       return [];

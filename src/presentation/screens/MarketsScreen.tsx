@@ -8,6 +8,7 @@ import { reorderMarketSection, type MarketSectionMoveDirection } from '../../dom
 import { suggestMarketSectionName } from '../../domain/services/suggestMarketSectionName';
 import { createMarketRepository } from '../../infrastructure/repositories/MarketRepositoryFactory';
 import { DefaultMarketSection, DefaultMarketSectionRepository } from '../../infrastructure/repositories/DefaultMarketSectionRepository';
+import { defaultMarkets } from '../../infrastructure/seed/defaultMarkets';
 import { useAppDispatch } from '../../app/store/hooks';
 import { setSelectedMarketId } from '../../app/store/slices/marketSlice';
 import { createId } from '../../shared/utils/createId';
@@ -414,21 +415,25 @@ export function MarketsScreen() {
             </AppText>
           </View>
 
-          {sortedMarkets.map((market) => (
-            <MarketRouteCard
-              key={market.id}
-              market={market}
-              isActive={market.id === activeMarketId}
-              isSaving={isSaving}
-              savingSectionId={savingSectionId}
-              onSelectMarket={handleSelectMarket}
-              onEditMarket={(selectedMarket) => setFormState({ mode: 'edit', market: selectedMarket })}
-              onEditSections={(selectedMarket) => setSectionEditorState({ mode: 'market', market: selectedMarket })}
-              onDeleteMarket={handleRequestDeleteMarket}
-              canDeleteMarket={sortedMarkets.length > 1}
-              onMoveSection={handleMoveSection}
-            />
-          ))}
+          {sortedMarkets.map((market) => {
+            const displayMarket = normalizeMarketForDisplay(market);
+
+            return (
+              <MarketRouteCard
+                key={market.id}
+                market={displayMarket}
+                isActive={market.id === activeMarketId}
+                isSaving={isSaving}
+                savingSectionId={savingSectionId}
+                onSelectMarket={handleSelectMarket}
+                onEditMarket={(selectedMarket) => setFormState({ mode: 'edit', market: selectedMarket })}
+                onEditSections={(selectedMarket) => setSectionEditorState({ mode: 'market', market: selectedMarket })}
+                onDeleteMarket={handleRequestDeleteMarket}
+                canDeleteMarket={sortedMarkets.length > 1}
+                onMoveSection={handleMoveSection}
+              />
+            );
+          })}
         </View>
       </AppScreen>
 
@@ -1247,15 +1252,39 @@ function SmallActionButton({ label, disabled, danger = false, onPress }: SmallAc
 }
 
 
-function shouldShowMarketAddress(market: Market): boolean {
-  if (!market.address) {
-    return false;
+
+function normalizeMarketForDisplay(market: Market): Market {
+  if (!isZaffariFernandesVieira(market)) {
+    return market;
   }
 
-  const normalizedName = normalizeText(market.name);
-  const normalizedZaffariName = normalizeText('Zaffari Fernandes Vieira');
+  const defaultZaffariMarket = defaultMarkets.find((defaultMarket) => isZaffariFernandesVieira(defaultMarket));
 
-  return normalizedName !== normalizedZaffariName;
+  if (!defaultZaffariMarket) {
+    const { address: _removedAddress, ...marketWithoutAddress } = market;
+    return marketWithoutAddress;
+  }
+
+  const { address: _removedAddress, ...marketWithoutAddress } = market;
+
+  return {
+    ...marketWithoutAddress,
+    name: defaultZaffariMarket.name,
+    isDefault: true,
+    sections: defaultZaffariMarket.sections.map((section) => ({
+      ...section,
+      marketId: market.id,
+    })),
+  };
+}
+
+function isZaffariFernandesVieira(market: Pick<Market, 'id' | 'name'>): boolean {
+  return market.id === 'market-zaffari-fernandes-vieira'
+    || normalizeText(market.name) === normalizeText('Zaffari Fernandes Vieira');
+}
+
+function shouldShowMarketAddress(market: Market): boolean {
+  return Boolean(market.address) && !isZaffariFernandesVieira(market);
 }
 
 function normalizeInputName(value: string): string {
