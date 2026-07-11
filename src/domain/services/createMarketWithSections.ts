@@ -1,10 +1,12 @@
 import { Market } from '../entities/Market';
 import { createId } from '../../shared/utils/createId';
+import { sanitizeAisleNumberInput } from '../../shared/utils/marketSection';
 
 export type MarketSectionTemplate = {
   name: string;
   routeOrder: number;
   isActive?: boolean;
+  aisleNumber?: string;
 };
 
 export function createMarketWithSections(name: string, sections: MarketSectionTemplate[]): Market {
@@ -21,6 +23,7 @@ export function createMarketWithSections(name: string, sections: MarketSectionTe
       id: createId(),
       marketId,
       name: section.name.trim().replace(/\s+/g, ' '),
+      aisleNumber: sanitizeAisleNumberInput(section.aisleNumber),
       routeOrder: index + 1,
       isActive: section.isActive !== false,
     })),

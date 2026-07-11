@@ -1,18 +1,32 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { defaultMarkets } from '../seed/defaultMarkets';
+import { sanitizeAisleNumberInput } from '../../shared/utils/marketSection';
 
 export interface DefaultMarketSection {
   id: string;
   name: string;
   routeOrder: number;
   isActive: boolean;
+  aisleNumber?: string;
 }
 
 const defaultMarketSectionsStorageKey = '@lista-mercado-facil:default-market-sections';
+const defaultMarketSectionsVersionStorageKey = '@lista-mercado-facil:default-market-sections-version';
+const currentDefaultMarketSectionsVersion = '2026-07-11-zaffari-fernandes-vieira-corredores-v1';
 
 export class DefaultMarketSectionRepository {
   async getAll(): Promise<DefaultMarketSection[]> {
-    const sections = await this.readSections();
+    const [sections, version] = await Promise.all([
+      this.readSections(),
+      AsyncStorage.getItem(defaultMarketSectionsVersionStorageKey),
+    ]);
+
+    if (version !== currentDefaultMarketSectionsVersion) {
+      const initialSections = getInitialDefaultSections();
+      await this.saveAll(initialSections);
+      await AsyncStorage.setItem(defaultMarketSectionsVersionStorageKey, currentDefaultMarketSectionsVersion);
+      return initialSections;
+    }
 
     if (sections.length > 0) {
       return this.normalizeSections(sections);
@@ -31,7 +45,10 @@ export class DefaultMarketSectionRepository {
       throw new Error('Mantenha pelo menos um corredor padrão.');
     }
 
-    await AsyncStorage.setItem(defaultMarketSectionsStorageKey, JSON.stringify(normalizedSections));
+    await AsyncStorage.multiSet([
+      [defaultMarketSectionsStorageKey, JSON.stringify(normalizedSections)],
+      [defaultMarketSectionsVersionStorageKey, currentDefaultMarketSectionsVersion],
+    ]);
   }
 
   async ensureInitialized(): Promise<void> {
@@ -73,6 +90,7 @@ export class DefaultMarketSectionRepository {
       .map((section, index) => ({
         ...section,
         name: section.name.trim().replace(/\s+/g, ' '),
+        aisleNumber: sanitizeAisleNumberInput(section.aisleNumber),
         routeOrder: index + 1,
         isActive: section.isActive !== false,
       }));
@@ -87,6 +105,7 @@ export function getInitialDefaultSections(): DefaultMarketSection[] {
     .map((section, index) => ({
       id: section.id.replace('section-', 'default-section-'),
       name: section.name,
+      aisleNumber: sanitizeAisleNumberInput(section.aisleNumber),
       routeOrder: index + 1,
       isActive: section.isActive !== false,
     }));

@@ -39,8 +39,8 @@ export const defaultCategories: ProductCategory[] = [
   },
   {
     id: 'dairy',
-    name: 'Frios e laticínios',
-    defaultSectionName: 'Frios e laticínios',
+    name: 'Laticínios',
+    defaultSectionName: 'Laticínios',
     keywords: [
       'achocolatado pronto', 'bebida láctea', 'bebida lactea', 'coalhada', 'creme de leite', 'iogurte',
       'leite', 'manteiga', 'margarina', 'muçarela', 'mussarela', 'nata', 'presunto', 'queijo',
@@ -58,8 +58,8 @@ export const defaultCategories: ProductCategory[] = [
   },
   {
     id: 'grocery',
-    name: 'Mercearia',
-    defaultSectionName: 'Mercearia',
+    name: 'Farinhas, Açúcar e Arroz',
+    defaultSectionName: 'Farinhas, Açúcar e Arroz',
     keywords: [
       'achocolatado', 'açúcar', 'acucar', 'arroz', 'aveia', 'azeite', 'biscoito', 'bolacha', 'café', 'cafe',
       'canjica', 'chá', 'cha', 'chocolate', 'doce de leite', 'extrato de tomate', 'farinha', 'feijão',
@@ -69,8 +69,8 @@ export const defaultCategories: ProductCategory[] = [
   },
   {
     id: 'beverages',
-    name: 'Bebidas',
-    defaultSectionName: 'Bebidas',
+    name: 'Refrigerantes e Águas',
+    defaultSectionName: 'Refrigerantes e Águas',
     keywords: [
       'água', 'agua', 'água com gás', 'agua com gas', 'chá gelado', 'cha gelado', 'energético', 'energetico',
       'isotônico', 'isotonico', 'refrigerante', 'suco', 'suco integral', 'tônica', 'tonica',
@@ -78,8 +78,8 @@ export const defaultCategories: ProductCategory[] = [
   },
   {
     id: 'cleaning',
-    name: 'Limpeza',
-    defaultSectionName: 'Limpeza',
+    name: 'Detergentes, Sabão e Desinfetantes',
+    defaultSectionName: 'Detergentes, Sabão e Desinfetantes',
     keywords: [
       'água sanitária', 'agua sanitaria', 'alvejante', 'amaciante', 'desinfetante', 'detergente', 'esponja',
       'lava roupas', 'limpa vidro', 'limpador', 'lustra móveis', 'lustra moveis', 'multiuso', 'pano de chão',
@@ -88,8 +88,8 @@ export const defaultCategories: ProductCategory[] = [
   },
   {
     id: 'personal-care',
-    name: 'Higiene pessoal',
-    defaultSectionName: 'Higiene pessoal',
+    name: 'Shampoos, Sabonetes e Desodorantes',
+    defaultSectionName: 'Shampoos, Sabonetes e Desodorantes',
     keywords: [
       'absorvente', 'algodão', 'algodao', 'barbeador', 'condicionador', 'creme dental', 'desodorante',
       'enxaguante bucal', 'escova de dente', 'fio dental', 'fralda', 'papel higiênico', 'papel higienico',
@@ -98,14 +98,14 @@ export const defaultCategories: ProductCategory[] = [
   },
   {
     id: 'pet',
-    name: 'Pet',
-    defaultSectionName: 'Pet',
+    name: 'Vassouras, Rações e Inseticidas',
+    defaultSectionName: 'Vassouras, Rações e Inseticidas',
     keywords: ['areia gato', 'areia para gato', 'bifinho pet', 'ração', 'racao', 'ração gato', 'racao gato', 'ração cachorro', 'racao cachorro', 'petisco pet'],
   },
   {
     id: 'utilities',
-    name: 'Utilidades',
-    defaultSectionName: 'Utilidades',
+    name: 'Utilidades, Material Elétrico e Automotivos',
+    defaultSectionName: 'Utilidades, Material Elétrico e Automotivos',
     keywords: [
       'copo descartável', 'copo descartavel', 'filtro de café', 'filtro de cafe', 'fósforo', 'fosforo',
       'guardanapo', 'lâmpada', 'lampada', 'papel alumínio', 'papel aluminio', 'papel filme', 'pilha',

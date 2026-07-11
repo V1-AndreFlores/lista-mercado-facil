@@ -1,20 +1,26 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Market } from '../../domain/entities/Market';
 import { MarketRepository } from '../../domain/repositories/MarketRepository';
+import { sanitizeAisleNumberInput } from '../../shared/utils/marketSection';
 import { defaultMarkets } from '../seed/defaultMarkets';
 
 const marketsStorageKey = '@lista-mercado-facil:markets';
 const activeMarketStorageKey = '@lista-mercado-facil:active-market-id';
+const marketsVersionStorageKey = '@lista-mercado-facil:markets-version';
+const currentMarketsVersion = '2026-07-11-zaffari-fernandes-vieira-corredores-v1';
+const zaffariMarketId = 'market-zaffari-fernandes-vieira';
 
 export class WebMarketRepository implements MarketRepository {
   async getAll(): Promise<Market[]> {
     const markets = await this.readMarkets();
 
     if (markets.length > 0) {
-      return markets;
+      const migratedMarkets = await this.migrateMarketsIfNeeded(markets);
+      return migratedMarkets;
     }
 
     await this.writeMarkets(defaultMarkets);
+    await AsyncStorage.setItem(marketsVersionStorageKey, currentMarketsVersion);
     await this.ensureActiveMarket(defaultMarkets);
     return defaultMarkets;
   }
@@ -48,16 +54,17 @@ export class WebMarketRepository implements MarketRepository {
 
   async save(market: Market): Promise<void> {
     const markets = await this.getAll();
-    const exists = markets.some((currentMarket) => currentMarket.id === market.id);
+    const normalizedMarket = this.normalizeMarket(market);
+    const exists = markets.some((currentMarket) => currentMarket.id === normalizedMarket.id);
     const nextMarkets = exists
-      ? markets.map((currentMarket) => (currentMarket.id === market.id ? market : currentMarket))
-      : [...markets, market];
+      ? markets.map((currentMarket) => (currentMarket.id === normalizedMarket.id ? normalizedMarket : currentMarket))
+      : [...markets, normalizedMarket];
 
     await this.writeMarkets(nextMarkets);
 
     const activeMarketId = await this.getActiveMarketId();
     if (!activeMarketId) {
-      await this.setActiveMarketId(market.id);
+      await this.setActiveMarketId(normalizedMarket.id);
     }
   }
 
@@ -75,6 +82,61 @@ export class WebMarketRepository implements MarketRepository {
       await AsyncStorage.removeItem(activeMarketStorageKey);
       await this.ensureActiveMarket(nextMarkets);
     }
+  }
+
+  private async migrateMarketsIfNeeded(markets: Market[]): Promise<Market[]> {
+    const version = await AsyncStorage.getItem(marketsVersionStorageKey);
+    const normalizedMarkets = markets.map((market) => this.normalizeMarket(market));
+
+    if (version === currentMarketsVersion) {
+      return normalizedMarkets;
+    }
+
+    const defaultZaffariMarket = defaultMarkets.find((market) => market.id === zaffariMarketId);
+
+    if (!defaultZaffariMarket) {
+      await AsyncStorage.setItem(marketsVersionStorageKey, currentMarketsVersion);
+      return normalizedMarkets;
+    }
+
+    const migratedMarkets = normalizedMarkets.map((market) => {
+      if (market.id !== zaffariMarketId) {
+        return market;
+      }
+
+      return {
+        ...market,
+        name: market.name || defaultZaffariMarket.name,
+        address: market.address ?? defaultZaffariMarket.address,
+        isDefault: market.isDefault ?? true,
+        sections: defaultZaffariMarket.sections,
+      };
+    });
+
+    const hasZaffariMarket = migratedMarkets.some((market) => market.id === zaffariMarketId);
+    const nextMarkets = hasZaffariMarket ? migratedMarkets : [defaultZaffariMarket, ...migratedMarkets];
+
+    await this.writeMarkets(nextMarkets);
+    await AsyncStorage.setItem(marketsVersionStorageKey, currentMarketsVersion);
+
+    return nextMarkets;
+  }
+
+  private normalizeMarket(market: Market): Market {
+    return {
+      ...market,
+      sections: [...market.sections]
+        .filter((section) => Boolean(section.name?.trim()))
+        .sort((left, right) => left.routeOrder - right.routeOrder)
+        .map((section, index) => ({
+          ...section,
+          marketId: section.marketId || market.id,
+          name: section.name.trim().replace(/\s+/g, ' '),
+          aisleNumber: sanitizeAisleNumberInput(section.aisleNumber),
+          routeOrder: index + 1,
+          isActive: section.isActive !== false,
+        })),
+    };
   }
 
   private async ensureActiveMarket(markets: Market[]): Promise<string | null> {

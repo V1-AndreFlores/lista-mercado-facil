@@ -27,6 +27,7 @@ import { createUserProductPreferenceRepository } from "../../infrastructure/repo
 import { useAppDispatch, useAppSelector } from "../../app/store/hooks";
 import { createId } from "../../shared/utils/createId";
 import { formatCurrencyCents, maskCurrencyInput, multiplyCurrencyCents, parseCurrencyInputToCents } from "../../shared/utils/money";
+import { formatAisleNumber } from "../../shared/utils/marketSection";
 import { setSelectedMarketId } from "../../app/store/slices/marketSlice";
 import {
   addShoppingListItem,
@@ -985,7 +986,7 @@ export function ShoppingListScreen() {
                     Rota de compra
                   </AppText>
                   <AppText muted style={styles.listHint}>
-                    Itens comprados ficam no final de cada corredor.
+                    Corredores concluídos vão para o final da rota.
                   </AppText>
                 </View>
 
@@ -1014,7 +1015,7 @@ export function ShoppingListScreen() {
                         variant="caption"
                         style={styles.sectionOrderText}
                       >
-                        {index + 1}
+                        {formatAisleNumber(section.aisleNumber)}
                       </AppText>
                     </View>
                     <View style={styles.sectionTextContainer}>

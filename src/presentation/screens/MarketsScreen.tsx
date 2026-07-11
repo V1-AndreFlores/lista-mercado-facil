@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Market } from '../../domain/entities/Market';
 import { normalizeText } from '../../domain/services/normalizeText';
 import { createMarketWithSections } from '../../domain/services/createMarketWithSections';
@@ -11,6 +11,7 @@ import { DefaultMarketSection, DefaultMarketSectionRepository } from '../../infr
 import { useAppDispatch } from '../../app/store/hooks';
 import { setSelectedMarketId } from '../../app/store/slices/marketSlice';
 import { createId } from '../../shared/utils/createId';
+import { formatAisleNumber, sanitizeAisleNumberInput } from '../../shared/utils/marketSection';
 import { AppButton } from '../components/AppButton';
 import { AppCard } from '../components/AppCard';
 import { AppGradientHeader } from '../components/AppGradientHeader';
@@ -31,6 +32,7 @@ type EditableSection = {
   name: string;
   routeOrder: number;
   isActive: boolean;
+  aisleNumber?: string;
 };
 
 interface SectionEditorState {
@@ -232,6 +234,7 @@ export function MarketsScreen() {
           name: section.name,
           routeOrder: section.routeOrder,
           isActive: section.isActive,
+          aisleNumber: sanitizeAisleNumberInput(section.aisleNumber),
         }));
 
         await repository.saveAll(updatedDefaultSections);
@@ -253,6 +256,7 @@ export function MarketsScreen() {
           name: section.name,
           routeOrder: section.routeOrder,
           isActive: section.isActive,
+          aisleNumber: sanitizeAisleNumberInput(section.aisleNumber),
         })) as MarketSection[],
       };
 
@@ -483,12 +487,11 @@ function MarketRouteCard({
           return (
             <View key={section.id} style={styles.sectionRow}>
               <View style={styles.routeIndex}>
-                <AppText variant="caption" style={styles.routeIndexText}>{index + 1}</AppText>
+                <AppText variant="caption" style={styles.routeIndexText}>{formatAisleNumber(section.aisleNumber)}</AppText>
               </View>
 
               <View style={styles.sectionInfo}>
                 <AppText style={styles.sectionName}>{section.name}</AppText>
-                <AppText subtle variant="caption">Corredor ativo</AppText>
               </View>
 
               <View style={styles.sectionActions}>
@@ -631,13 +634,14 @@ function SectionEditorModal({ visible, title, description, sections, isSaving, o
     setDraftSections((currentSections) => reorderEditableSections(currentSections, sectionId, direction));
   }
 
-  function handleSaveSectionName(name: string) {
+  function handleSaveSection(sectionName: string, aisleNumber: string) {
     if (!sectionFormState) {
       return;
     }
 
-    const trimmedName = normalizeInputName(name);
+    const trimmedName = normalizeInputName(sectionName);
     const normalizedName = normalizeText(trimmedName);
+    const normalizedAisleNumber = sanitizeAisleNumberInput(aisleNumber);
 
     if (!trimmedName) {
       throw new Error('Informe o nome do corredor.');
@@ -657,6 +661,7 @@ function SectionEditorModal({ visible, title, description, sections, isSaving, o
         {
           id: createId(),
           name: trimmedName,
+          aisleNumber: normalizedAisleNumber,
           routeOrder: currentSections.length + 1,
           isActive: true,
         },
@@ -664,7 +669,7 @@ function SectionEditorModal({ visible, title, description, sections, isSaving, o
     } else if (sectionFormState.section) {
       setDraftSections((currentSections) => currentSections.map((section) => (
         section.id === sectionFormState.section?.id
-          ? { ...section, name: trimmedName }
+          ? { ...section, name: trimmedName, aisleNumber: normalizedAisleNumber }
           : section
       )));
     }
@@ -736,13 +741,12 @@ function SectionEditorModal({ visible, title, description, sections, isSaving, o
                 return (
                   <View key={section.id} style={styles.editorSectionRow}>
                     <View style={styles.routeIndex}>
-                      <AppText variant="caption" style={styles.routeIndexText}>{index + 1}</AppText>
+                      <AppText variant="caption" style={styles.routeIndexText}>{formatAisleNumber(section.aisleNumber)}</AppText>
                     </View>
 
                     <View style={styles.sectionInfo}>
                       <AppText style={styles.sectionName}>{section.name}</AppText>
-                      <AppText subtle variant="caption">Corredor ativo</AppText>
-                    </View>
+                          </View>
 
                     <View style={styles.editorSectionActions}>
                       <SmallActionButton
@@ -803,9 +807,10 @@ function SectionEditorModal({ visible, title, description, sections, isSaving, o
         visible={Boolean(sectionFormState)}
         mode={sectionFormState?.mode ?? 'create'}
         initialName={sectionFormState?.section?.name ?? ''}
+        initialAisleNumber={sectionFormState?.section?.aisleNumber ?? ''}
         isSaving={isSaving}
         onCancel={() => setSectionFormState(null)}
-        onSave={handleSaveSectionName}
+        onSave={handleSaveSection}
       />
 
       <ConfirmDeleteSectionModal
@@ -823,25 +828,41 @@ interface SectionFormModalProps {
   visible: boolean;
   mode: 'create' | 'edit';
   initialName: string;
+  initialAisleNumber: string;
   isSaving: boolean;
   onCancel: () => void;
-  onSave: (name: string) => void;
+  onSave: (name: string, aisleNumber: string) => void;
 }
 
-function SectionFormModal({ visible, mode, initialName, isSaving, onCancel, onSave }: SectionFormModalProps) {
+function SectionFormModal({
+  visible,
+  mode,
+  initialName,
+  initialAisleNumber,
+  isSaving,
+  onCancel,
+  onSave,
+}: SectionFormModalProps) {
   const [name, setName] = useState(initialName);
+  const [aisleNumber, setAisleNumber] = useState(initialAisleNumber);
   const [error, setError] = useState<string | null>(null);
   const suggestion = suggestMarketSectionName(name);
   const theme = useAppTheme();
   const styles = createStyles(theme);
 
-  useFocusReset(visible, initialName, setName, setError);
+  useEffect(() => {
+    if (visible) {
+      setName(initialName);
+      setAisleNumber(sanitizeAisleNumberInput(initialAisleNumber));
+      setError(null);
+    }
+  }, [visible, initialName, initialAisleNumber]);
 
   function handleSave() {
     setError(null);
 
     try {
-      onSave(name);
+      onSave(name, aisleNumber);
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Não foi possível salvar o corredor.');
     }
@@ -849,69 +870,94 @@ function SectionFormModal({ visible, mode, initialName, isSaving, onCancel, onSa
 
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalCard}>
-          <AppText variant="subtitle" style={styles.modalTitle}>
-            {mode === 'create' ? 'Adicionar corredor' : 'Editar corredor'}
-          </AppText>
-          <AppText muted style={styles.modalDescription}>
-            Informe o nome do corredor como ele aparece no mercado.
-          </AppText>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoidingOverlay}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.keyboardModalScrollContent}
+        >
+          <View style={styles.modalCard}>
+            <AppText variant="subtitle" style={styles.modalTitle}>
+              {mode === 'create' ? 'Adicionar corredor' : 'Editar corredor'}
+            </AppText>
+            <AppText muted style={styles.modalDescription}>
+              Informe o número e o nome do corredor como aparecem no mercado. Deixe o número vazio para exibir "--".
+            </AppText>
 
-          <TextInput
-            value={name}
-            onChangeText={(value) => {
-              setName(value);
-              if (error) setError(null);
-            }}
-            placeholder="Ex.: Açougue"
-            placeholderTextColor={theme.colors.textSubtle}
-            style={styles.modalInput}
-            autoCorrect={false}
-            autoFocus
-          />
+            <AppText variant="caption" style={styles.modalInputLabel}>Número do corredor</AppText>
+            <TextInput
+              value={aisleNumber}
+              onChangeText={(value) => {
+                setAisleNumber(sanitizeAisleNumberInput(value));
+                if (error) setError(null);
+              }}
+              placeholder="Ex.: 01"
+              placeholderTextColor={theme.colors.textSubtle}
+              style={styles.modalInput}
+              keyboardType="number-pad"
+              returnKeyType="next"
+            />
 
-          {suggestion ? (
-            <View style={styles.suggestionBox}>
-              <View style={styles.suggestionTextContainer}>
-                <AppText variant="caption" style={styles.suggestionLabel}>Sugestão</AppText>
-                <AppText style={styles.suggestionText}>{suggestion}</AppText>
+            <AppText variant="caption" style={styles.modalInputLabel}>Nome do corredor</AppText>
+            <TextInput
+              value={name}
+              onChangeText={(value) => {
+                setName(value);
+                if (error) setError(null);
+              }}
+              placeholder="Ex.: Açougue"
+              placeholderTextColor={theme.colors.textSubtle}
+              style={styles.modalInput}
+              returnKeyType="done"
+              onSubmitEditing={handleSave}
+              autoCorrect={false}
+              autoFocus
+            />
+
+            {suggestion ? (
+              <View style={styles.suggestionBox}>
+                <View style={styles.suggestionTextContainer}>
+                  <AppText variant="caption" style={styles.suggestionLabel}>Sugestão</AppText>
+                  <AppText style={styles.suggestionText}>{suggestion}</AppText>
+                </View>
+                <Pressable
+                  onPress={() => {
+                    setName(suggestion);
+                    setError(null);
+                  }}
+                  style={({ pressed }) => [styles.suggestionButton, pressed ? styles.pressed : null]}
+                >
+                  <AppText variant="caption" style={styles.suggestionButtonText}>Usar</AppText>
+                </Pressable>
               </View>
+            ) : null}
+
+            {error ? (
+              <AppText variant="caption" style={styles.validationMessage}>{error}</AppText>
+            ) : null}
+
+            <View style={styles.modalActions}>
               <Pressable
-                onPress={() => {
-                  setName(suggestion);
-                  setError(null);
-                }}
-                style={({ pressed }) => [styles.suggestionButton, pressed ? styles.pressed : null]}
+                onPress={onCancel}
+                disabled={isSaving}
+                style={({ pressed }) => [styles.modalButton, styles.modalCancelButton, pressed ? styles.pressed : null]}
               >
-                <AppText variant="caption" style={styles.suggestionButtonText}>Usar</AppText>
+                <AppText variant="caption" style={styles.modalCancelText}>Cancelar</AppText>
+              </Pressable>
+
+              <Pressable
+                onPress={handleSave}
+                disabled={isSaving}
+                style={({ pressed }) => [styles.modalButton, styles.modalPrimaryButton, pressed ? styles.pressed : null]}
+              >
+                <AppText variant="caption" style={styles.modalPrimaryText}>Salvar</AppText>
               </Pressable>
             </View>
-          ) : null}
-
-          {error ? (
-            <AppText variant="caption" style={styles.validationMessage}>{error}</AppText>
-          ) : null}
-
-          <View style={styles.modalActions}>
-            <Pressable
-              onPress={onCancel}
-              disabled={isSaving}
-              style={({ pressed }) => [styles.modalButton, styles.modalCancelButton, pressed ? styles.pressed : null]}
-            >
-              <AppText variant="caption" style={styles.modalCancelText}>Cancelar</AppText>
-            </Pressable>
-
-            <Pressable
-              onPress={handleSave}
-              disabled={isSaving}
-              style={({ pressed }) => [styles.modalButton, styles.modalPrimaryButton, pressed ? styles.pressed : null]}
-            >
-              <AppText variant="caption" style={styles.modalPrimaryText}>Salvar</AppText>
-            </Pressable>
           </View>
-        </View>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -1078,6 +1124,7 @@ function normalizeEditableSections<TSection extends EditableSection>(sections: T
     .map((section, index) => ({
       ...section,
       name: normalizeInputName(section.name),
+      aisleNumber: sanitizeAisleNumberInput(section.aisleNumber),
       routeOrder: index + 1,
       isActive: section.isActive !== false,
     }));
@@ -1323,6 +1370,19 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     routeButtonTextDisabled: {
       color: theme.colors.textSubtle,
     },
+    keyboardAvoidingOverlay: {
+      flex: 1,
+      backgroundColor:
+        theme.mode === 'dark'
+          ? 'rgba(2, 6, 23, 0.78)'
+          : 'rgba(15, 23, 42, 0.34)',
+    },
+    keyboardModalScrollContent: {
+      flexGrow: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: theme.spacing.xl,
+    },
     modalOverlay: {
       flex: 1,
       alignItems: 'center',
@@ -1360,7 +1420,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     },
     modalInput: {
       minHeight: 54,
-      marginTop: theme.spacing.lg,
+      marginTop: theme.spacing.sm,
       borderWidth: 1,
       borderColor: theme.colors.border,
       borderRadius: theme.radius.lg,
@@ -1369,6 +1429,11 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       fontWeight: '700',
       color: theme.colors.text,
       backgroundColor: theme.colors.inputBackground,
+    },
+    modalInputLabel: {
+      marginTop: theme.spacing.lg,
+      color: theme.colors.textMuted,
+      fontWeight: '900',
     },
     validationMessage: {
       marginTop: theme.spacing.sm,
