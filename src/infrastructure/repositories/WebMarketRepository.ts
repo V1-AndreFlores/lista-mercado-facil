@@ -7,7 +7,7 @@ import { defaultMarkets } from '../seed/defaultMarkets';
 const marketsStorageKey = '@lista-mercado-facil:markets';
 const activeMarketStorageKey = '@lista-mercado-facil:active-market-id';
 const marketsVersionStorageKey = '@lista-mercado-facil:markets-version';
-const currentMarketsVersion = '2026-07-11-zaffari-fernandes-vieira-corredores-v4';
+const currentMarketsVersion = '2026-07-11-zaffari-fernandes-vieira-corredores-v5';
 const zaffariMarketId = 'market-zaffari-fernandes-vieira';
 const deletedZaffariMarketStorageKey = '@lista-mercado-facil:deleted-zaffari-market';
 
@@ -107,10 +107,14 @@ export class WebMarketRepository implements MarketRepository {
       return normalizedMarkets;
     }
 
+    let hasZaffariMarket = false;
+
     const migratedMarkets = normalizedMarkets.map((market) => {
-      if (market.id !== zaffariMarketId) {
+      if (!this.isZaffariFernandesVieira(market)) {
         return market;
       }
+
+      hasZaffariMarket = true;
 
       const { address: _removedAddress, ...marketWithoutAddress } = market;
 
@@ -118,11 +122,13 @@ export class WebMarketRepository implements MarketRepository {
         ...marketWithoutAddress,
         name: defaultZaffariMarket.name,
         isDefault: true,
-        sections: defaultZaffariMarket.sections,
+        sections: defaultZaffariMarket.sections.map((section) => ({
+          ...section,
+          marketId: market.id,
+        })),
       };
     });
 
-    const hasZaffariMarket = migratedMarkets.some((market) => market.id === zaffariMarketId);
     const nextMarkets = hasZaffariMarket || wasZaffariDeleted
       ? migratedMarkets
       : [defaultZaffariMarket, ...migratedMarkets];
@@ -134,6 +140,23 @@ export class WebMarketRepository implements MarketRepository {
     await AsyncStorage.setItem(marketsVersionStorageKey, currentMarketsVersion);
 
     return nextMarkets;
+  }
+
+  private isZaffariFernandesVieira(market: Market): boolean {
+    if (market.id === zaffariMarketId) {
+      return true;
+    }
+
+    return this.normalizeText(market.name) === this.normalizeText('Zaffari Fernandes Vieira');
+  }
+
+  private normalizeText(value: string): string {
+    return value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
   }
 
   private normalizeMarket(market: Market): Market {

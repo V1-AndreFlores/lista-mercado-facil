@@ -512,7 +512,7 @@ function MarketRouteCard({
             </View>
 
             <AppText variant="subtitle" style={styles.marketName}>{market.name}</AppText>
-            {!!market.address && <AppText muted style={styles.address}>{market.address}</AppText>}
+            {shouldShowMarketAddress(market) ? <AppText muted style={styles.address}>{market.address}</AppText> : null}
           </View>
         </View>
 
@@ -1244,6 +1244,18 @@ function SmallActionButton({ label, disabled, danger = false, onPress }: SmallAc
       </AppText>
     </Pressable>
   );
+}
+
+
+function shouldShowMarketAddress(market: Market): boolean {
+  if (!market.address) {
+    return false;
+  }
+
+  const normalizedName = normalizeText(market.name);
+  const normalizedZaffariName = normalizeText('Zaffari Fernandes Vieira');
+
+  return normalizedName !== normalizedZaffariName;
 }
 
 function normalizeInputName(value: string): string {
