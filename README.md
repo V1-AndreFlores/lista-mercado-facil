@@ -13,7 +13,7 @@ O aplicativo é uma iniciativa pessoal, gratuita, sem anúncios, sem login obrig
 Criar um aplicativo mobile offline-first que permita:
 
 - montar listas de compras rapidamente;
-- organizar os itens por corredor/setor do supermercado;
+- organizar os itens por corredor do supermercado;
 - permitir informar preço unitário opcional por produto;
 - mostrar o total parcial da compra com base nos itens já marcados como comprados;
 - manter supermercados cadastrados com ordem própria de corredores;
@@ -121,15 +121,24 @@ Projeto em desenvolvimento ativo.
   - marcação de produto como comprado;
   - remoção de produto com confirmação;
   - limpeza da lista com confirmação;
-  - alteração do corredor/setor do produto;
+  - alteração do corredor do produto;
+  - exibição apenas do status do item na lista, sem repetir o corredor na linha de status;
+  - exibição do preço unitário e total do item em linhas separadas;
+  - movimentação automática de corredores totalmente comprados para o final da rota;
   - aprendizado local de preferência de corredor.
 - Tela Mercados com:
   - cadastro de supermercado;
   - edição de nome;
+  - exclusão de supermercado com confirmação;
+  - bloqueio para não excluir o último supermercado cadastrado;
+  - seleção automática de outro supermercado quando o mercado ativo é excluído;
   - seleção de mercado ativo;
   - reordenação de corredores do mercado;
   - edição, inclusão e exclusão de corredores do mercado;
   - edição, inclusão, exclusão e reordenação de Corredores padrão;
+  - numeração opcional dos corredores com exibição em dois dígitos;
+  - permissão de números repetidos para corredores;
+  - exibição de "--" quando o corredor não possui número;
   - cópia dos Corredores padrão ao criar novo supermercado.
 - Histórico na tela Início com:
   - listas concluídas;
@@ -139,7 +148,8 @@ Projeto em desenvolvimento ativo.
   - exibição de hora e minuto;
   - exibição do nome do supermercado;
   - preservação dos preços informados;
-  - exibição do total da compra quando houver preços.
+  - exibição do total da compra quando houver preços;
+  - opção de ver a lista concluída como extrato da compra.
 - Tela Ajustes com:
   - alternância entre tema claro e escuro;
   - switch customizado com padrão visual azul/ciano;
@@ -242,7 +252,9 @@ Dados locais principais:
 - histórico;
 - preferências aprendidas pelo app;
 - configurações;
-- preços unitários opcionais dos produtos.
+- preços unitários opcionais dos produtos;
+- numeração opcional de corredores;
+- versões/migrações locais para atualização de seeds e dados padrão.
 
 ### AsyncStorage
 
@@ -253,7 +265,8 @@ O AsyncStorage é usado para preferências simples e persistência local no ambi
 - listas locais;
 - configurações;
 - retenção de histórico;
-- Corredores padrão.
+- Corredores padrão;
+- versão local dos Corredores padrão.
 
 ### Redux Toolkit
 
@@ -400,7 +413,7 @@ Exemplos:
 
 ### MarketSection
 
-Representa um corredor/setor de um supermercado.
+Representa um corredor de um supermercado.
 
 Exemplos:
 
@@ -418,6 +431,22 @@ Exemplos:
 - Utilidades
 - Outros
 
+Cada corredor pode possuir:
+
+- nome;
+- ordem de rota;
+- número opcional do corredor;
+- status interno de ativo;
+- vínculo com o supermercado.
+
+A numeração do corredor:
+
+- aceita somente números inteiros;
+- é limitada a dois dígitos;
+- é exibida com zero à esquerda quando necessário;
+- permite repetição, pois o mesmo corredor físico pode atender dois lados;
+- exibe `--` quando não há número informado.
+
 ### ShoppingList
 
 Representa uma lista de compras.
@@ -434,7 +463,7 @@ Cada item possui:
 - nome normalizado;
 - quantidade;
 - unidade;
-- corredor/setor;
+- corredor;
 - status de comprado;
 - preço unitário opcional em centavos;
 - datas de criação e atualização.
@@ -489,6 +518,20 @@ Rotinas previstas ou preparadas para a inicialização:
 
 ---
 
+## Identidade do app instalado
+
+O aplicativo possui configuração de identidade para instalação em dispositivo físico.
+
+Regras atuais:
+
+- nome exibido no dispositivo: **Lista de Mercado Fácil**;
+- ícones separados para iOS e Android;
+- ícone Android com carrinho em escala reduzida para melhor leitura no launcher;
+- ícone iOS mantendo a identidade visual do app;
+- assets preparados em `assets/` para uso pelo Expo.
+
+---
+
 ## Supermercados e corredores
 
 O app trabalha com dois níveis de corredores.
@@ -504,6 +547,9 @@ Regras:
 - podem ser editados;
 - podem ser excluídos;
 - podem ser reordenados;
+- possuem número opcional de corredor;
+- exibem o número como `01`, `02`, `13` ou `--` quando vazio;
+- permitem números repetidos;
 - não permitem nomes duplicados;
 - não permitem excluir o último corredor;
 - a exclusão exige confirmação;
@@ -520,6 +566,9 @@ Regras:
 - podem ser editados;
 - podem ser excluídos;
 - podem ser reordenados;
+- possuem número opcional de corredor;
+- exibem o número como `01`, `02`, `13` ou `--` quando vazio;
+- permitem números repetidos;
 - não permitem nomes duplicados;
 - não permitem excluir o último corredor;
 - a exclusão exige confirmação;
@@ -533,6 +582,17 @@ Ao criar um novo supermercado:
 - a cópia fica independente;
 - alterações futuras nos Corredores padrão não afetam esse supermercado;
 - alterações futuras no supermercado não afetam os Corredores padrão.
+
+### Exclusão de supermercado
+
+A tela Mercados permite excluir supermercados cadastrados.
+
+Regras:
+
+- a exclusão exige confirmação;
+- o app não permite excluir o último supermercado cadastrado;
+- se o supermercado excluído estiver ativo, outro supermercado é selecionado automaticamente;
+- listas e históricos devem continuar preservados conforme a estratégia de persistência atual.
 
 ### Normalização e sugestão de nomes
 
@@ -575,29 +635,50 @@ Zaffari Fernandes Vieira
 
 Esse mercado existe como dado inicial local e pode ser editado pelo usuário.
 
+Regras atuais do seed:
+
+- o mercado não deve exibir endereço fixo;
+- a lista de corredores do Zaffari segue a rota real informada pelo usuário;
+- migrações locais podem atualizar o Zaffari salvo quando houver alteração relevante no seed.
+
 ---
 
 ## Corredores iniciais
 
-A lista inicial de corredores usada pelo app é:
+A lista inicial de corredores do Zaffari Fernandes Vieira usada pelo app é:
 
 ```text
-Hortifruti
-Padaria
-Açougue
-Peixaria
-Frios e laticínios
-Congelados
-Mercearia
-Bebidas
-Higiene pessoal
-Limpeza
-Pet
-Utilidades
-Outros
+01. Óleos, Conservas e Molhos
+01. Dietéticos, Condimentos e Sopas
+02. Achocolatados e Leites
+02. Café, Chá e Erva-mate
+03. Massas, Geléias e Compotas
+03. Gelatinas, Margarinas e Massas Frescas
+04. Salgadinhos e Bomboniére
+04. Laticínios
+05. Biscoitos e Cereais Matinais
+06. Farinhas, Açúcar e Arroz
+06. Congelados
+07. Shampoos, Sabonetes e Desodorantes
+08. Perfumaria Infantil e Higiene
+09. Detergentes, Sabão e Desinfetantes
+10. Vassouras, Rações e Inseticidas
+11. Utilidades, Material Elétrico e Automotivos
+12. Plásticos, Festas e Escolar
+13. Refrigerantes e Águas
+--. Hortifruti
+--. Açougue
+--. Peixaria
+--. Padaria
+--. Rotisseria
+--. Fiambreria
+--. Frios, Queijos e Embutidos
+--. Outros
 ```
 
 A ordem dos corredores pode ser configurada nos Corredores padrão e também em cada supermercado.
+
+Os corredores sem número são armazenados com o campo de número vazio e exibidos como `--`.
 
 ---
 
@@ -616,18 +697,33 @@ A tela Lista permite:
 - informar preço unitário opcional;
 - formatar preço automaticamente no padrão pt-BR;
 - bloquear produtos repetidos;
-- classificar produto por corredor/setor;
+- classificar produto por corredor;
 - agrupar itens por corredor;
 - ordenar os grupos conforme a rota do supermercado ativo;
+- mover para o final os corredores que estiverem com todos os itens comprados;
 - marcar item como comprado;
 - editar quantidade;
 - editar preço unitário;
 - recalcular totais quando a quantidade ou o preço mudam;
 - trocar o corredor do item;
+- exibir apenas o status do item na linha de status;
 - remover item com confirmação;
 - limpar a lista com confirmação;
 - concluir a compra;
 - acompanhar o total parcial dos itens já comprados.
+
+### Ordenação dinâmica durante a compra
+
+Durante a compra, os corredores são reordenados conforme o andamento dos itens.
+
+Regra:
+
+- corredores com itens pendentes continuam priorizados na rota;
+- quando todos os itens de um corredor são marcados como comprados, esse corredor vai para o final;
+- o próximo corredor com pendências assume a posição principal da rota;
+- corredores parcialmente comprados permanecem na ordem configurada.
+
+Essa regra ajuda o usuário a seguir a rota real sem voltar para corredores já concluídos.
 
 ---
 
@@ -686,7 +782,20 @@ A tela Início exibe:
 - total da compra quando houver preços informados;
 - preços preservados nos itens da lista concluída;
 - opção de reutilizar uma lista;
+- opção de ver lista concluída como extrato;
 - opção de apagar histórico.
+
+### Extrato da compra
+
+A opção **Ver lista** permite consultar os detalhes de uma compra concluída.
+
+O extrato apresenta:
+
+- produtos comprados;
+- quantidade;
+- preço unitário, quando informado;
+- total do item, quando houver preço;
+- total geral da compra, quando houver preços informados.
 
 ### Retenção do histórico
 
@@ -809,6 +918,17 @@ Ao fechar e abrir o app novamente, o tema escolhido é mantido.
 
 O switch de tema escuro usa componente customizado `AppThemeSwitch`, seguindo o padrão visual azul/ciano do app.
 
+### Modais e teclado
+
+Os modais com campos de digitação devem ser preparados para uso em celular físico.
+
+Diretrizes:
+
+- usar comportamento compatível com teclado virtual;
+- permitir rolagem quando o teclado estiver aberto;
+- evitar que campos e botões de ação fiquem escondidos;
+- aplicar esse cuidado em edição de produto, edição de corredor, criação de lista e edição de mercado.
+
 ---
 
 ## Navegação
@@ -871,12 +991,17 @@ A splash é a tela inicial do fluxo e redireciona para a tela Início após conc
 - Exibir supermercados cadastrados.
 - Criar novo supermercado.
 - Editar nome do supermercado.
+- Excluir supermercado com confirmação.
+- Impedir exclusão do último supermercado.
 - Selecionar mercado ativo.
 - Editar Corredores padrão.
 - Editar Corredores do mercado.
 - Incluir corredor.
 - Editar corredor.
 - Excluir corredor com confirmação.
+- Informar número opcional do corredor.
+- Exibir número do corredor com dois dígitos ou `--`.
+- Permitir números repetidos de corredor.
 - Reordenar corredores.
 - Bloquear duplicidade de nomes.
 - Sugerir nome corrigido quando aplicável.
@@ -924,10 +1049,12 @@ Status: implementado em evolução.
 
 - Criar supermercado.
 - Editar supermercado.
+- Excluir supermercado.
 - Selecionar supermercado ativo.
 - Reordenar corredores.
 - Editar Corredores padrão.
 - Editar Corredores do mercado.
+- Adicionar numeração opcional de corredor.
 - Criar lista associada a supermercado.
 
 Status: implementado em evolução.
@@ -1084,10 +1211,16 @@ Prioridades de teste:
 - preservação de preços no histórico;
 - reaproveitamento do preço unitário mais recente;
 - criação de novo supermercado com Corredores padrão;
+- exclusão de supermercado;
+- bloqueio de exclusão do último supermercado;
+- seleção automática de novo mercado ativo após exclusão;
 - edição de Corredores padrão;
 - edição de Corredores do mercado;
 - bloqueio de nomes duplicados;
 - sugestão de nomes com acentuação;
+- formatação de número de corredor;
+- exibição de `--` para corredor sem número;
+- ordenação dinâmica que move corredores concluídos para o final;
 - reducers Redux;
 - use cases de domínio.
 
@@ -1101,6 +1234,10 @@ itens comprados devem ser exibidos após os pendentes
 novo supermercado deve copiar os Corredores padrão atuais
 não deve permitir corredor duplicado ignorando acentuação
 não deve permitir excluir o último corredor
+não deve permitir excluir o último supermercado
+corredor sem número deve exibir --
+corredor 1 deve exibir 01
+corredores totalmente comprados devem ir para o final da rota
 quantidade vazia ou zero deve ser normalizada para 1
 preço 1290 deve ser exibido como R$ 12,90
 total da compra deve considerar somente itens comprados
@@ -1178,7 +1315,7 @@ Antes de alterações grandes, recomenda-se commitar o estado atual para facilit
 Linha sugerida para esta atualização de documentação:
 
 ```bash
-git add README.md && git commit -m "docs: atualiza README com funcionalidades recentes" && git push
+git add README.md && git commit -m "docs: atualiza README com ultimas alteracoes" && git push
 ```
 
 ---
