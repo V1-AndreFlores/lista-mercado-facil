@@ -1,5 +1,5 @@
 export function sanitizeAisleNumberInput(rawValue: string | number | undefined | null): string {
-  const digits = String(rawValue ?? '').replace(/\D/g, '');
+  const digits = String(rawValue ?? '').replace(/\D/g, '').slice(0, 2);
 
   if (!digits) {
     return '';

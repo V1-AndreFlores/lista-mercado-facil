@@ -898,6 +898,7 @@ function SectionFormModal({
               style={styles.modalInput}
               keyboardType="number-pad"
               returnKeyType="next"
+              maxLength={2}
             />
 
             <AppText variant="caption" style={styles.modalInputLabel}>Nome do corredor</AppText>
