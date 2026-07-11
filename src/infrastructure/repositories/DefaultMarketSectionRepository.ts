@@ -12,7 +12,7 @@ export interface DefaultMarketSection {
 
 const defaultMarketSectionsStorageKey = '@lista-mercado-facil:default-market-sections';
 const defaultMarketSectionsVersionStorageKey = '@lista-mercado-facil:default-market-sections-version';
-const currentDefaultMarketSectionsVersion = '2026-07-11-zaffari-fernandes-vieira-corredores-v2';
+const currentDefaultMarketSectionsVersion = '2026-07-11-zaffari-fernandes-vieira-corredores-v4';
 
 export class DefaultMarketSectionRepository {
   async getAll(): Promise<DefaultMarketSection[]> {

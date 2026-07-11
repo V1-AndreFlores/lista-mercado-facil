@@ -518,12 +518,12 @@ function MarketRouteCard({
 
         <View style={styles.marketActions}>
           <SecondaryActionButton
-            label="Editar nome"
+            label="Editar"
             disabled={isSaving}
             onPress={() => onEditMarket(market)}
           />
           <SecondaryActionButton
-            label={isActive ? 'Selecionado' : 'Selecionar'}
+            label={isActive ? 'Atual' : 'Selecionar'}
             disabled={isSaving || isActive}
             highlighted={!isActive}
             onPress={() => onSelectMarket(market)}

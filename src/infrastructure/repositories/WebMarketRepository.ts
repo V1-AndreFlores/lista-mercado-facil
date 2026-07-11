@@ -7,7 +7,7 @@ import { defaultMarkets } from '../seed/defaultMarkets';
 const marketsStorageKey = '@lista-mercado-facil:markets';
 const activeMarketStorageKey = '@lista-mercado-facil:active-market-id';
 const marketsVersionStorageKey = '@lista-mercado-facil:markets-version';
-const currentMarketsVersion = '2026-07-11-zaffari-fernandes-vieira-corredores-v2';
+const currentMarketsVersion = '2026-07-11-zaffari-fernandes-vieira-corredores-v4';
 const zaffariMarketId = 'market-zaffari-fernandes-vieira';
 const deletedZaffariMarketStorageKey = '@lista-mercado-facil:deleted-zaffari-market';
 
@@ -97,11 +97,6 @@ export class WebMarketRepository implements MarketRepository {
   private async migrateMarketsIfNeeded(markets: Market[]): Promise<Market[]> {
     const version = await AsyncStorage.getItem(marketsVersionStorageKey);
     const normalizedMarkets = markets.map((market) => this.normalizeMarket(market));
-
-    if (version === currentMarketsVersion) {
-      return normalizedMarkets;
-    }
-
     const [defaultZaffariMarket, wasZaffariDeleted] = await Promise.all([
       Promise.resolve(defaultMarkets.find((market) => market.id === zaffariMarketId)),
       AsyncStorage.getItem(deletedZaffariMarketStorageKey).then((value) => value === 'true'),
@@ -117,11 +112,12 @@ export class WebMarketRepository implements MarketRepository {
         return market;
       }
 
+      const { address: _removedAddress, ...marketWithoutAddress } = market;
+
       return {
-        ...market,
-        name: market.name || defaultZaffariMarket.name,
-        address: undefined,
-        isDefault: market.isDefault ?? true,
+        ...marketWithoutAddress,
+        name: defaultZaffariMarket.name,
+        isDefault: true,
         sections: defaultZaffariMarket.sections,
       };
     });
@@ -131,7 +127,10 @@ export class WebMarketRepository implements MarketRepository {
       ? migratedMarkets
       : [defaultZaffariMarket, ...migratedMarkets];
 
-    await this.writeMarkets(nextMarkets);
+    if (version !== currentMarketsVersion || JSON.stringify(nextMarkets) !== JSON.stringify(normalizedMarkets)) {
+      await this.writeMarkets(nextMarkets);
+    }
+
     await AsyncStorage.setItem(marketsVersionStorageKey, currentMarketsVersion);
 
     return nextMarkets;
