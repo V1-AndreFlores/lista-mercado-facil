@@ -51,6 +51,7 @@ export function MarketsScreen() {
   const [screenError, setScreenError] = useState<string | null>(null);
   const [formState, setFormState] = useState<MarketFormState | null>(null);
   const [sectionEditorState, setSectionEditorState] = useState<SectionEditorState | null>(null);
+  const [marketPendingDeletion, setMarketPendingDeletion] = useState<Market | null>(null);
   const theme = useAppTheme();
   const styles = createStyles(theme);
 
@@ -269,6 +270,64 @@ export function MarketsScreen() {
     }
   }
 
+  function handleRequestDeleteMarket(market: Market) {
+    if (isSaving) {
+      return;
+    }
+
+    if (markets.length <= 1) {
+      setScreenError('Mantenha pelo menos um supermercado cadastrado.');
+      return;
+    }
+
+    setMarketPendingDeletion(market);
+  }
+
+  function handleCancelDeleteMarket() {
+    if (isSaving) {
+      return;
+    }
+
+    setMarketPendingDeletion(null);
+  }
+
+  async function handleConfirmDeleteMarket() {
+    if (!marketPendingDeletion || isSaving) {
+      return;
+    }
+
+    if (markets.length <= 1) {
+      setScreenError('Mantenha pelo menos um supermercado cadastrado.');
+      setMarketPendingDeletion(null);
+      return;
+    }
+
+    setIsSaving(true);
+    setScreenError(null);
+
+    try {
+      const repository = await createMarketRepository();
+      await repository.delete(marketPendingDeletion.id);
+
+      const [updatedMarkets, updatedActiveMarketId] = await Promise.all([
+        repository.getAll(),
+        repository.getActiveMarketId(),
+      ]);
+
+      setMarkets(updatedMarkets);
+      setActiveMarketId(updatedActiveMarketId);
+      dispatch(setSelectedMarketId(updatedActiveMarketId));
+      setSectionEditorState((currentState) => (
+        currentState?.market?.id === marketPendingDeletion.id ? null : currentState
+      ));
+      setMarketPendingDeletion(null);
+    } catch {
+      setScreenError('Não foi possível apagar este supermercado.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   function updateMarketInState(updatedMarket: Market) {
     setMarkets((currentMarkets) => currentMarkets.map((market) => (
       market.id === updatedMarket.id ? updatedMarket : market
@@ -365,6 +424,8 @@ export function MarketsScreen() {
               onSelectMarket={handleSelectMarket}
               onEditMarket={(selectedMarket) => setFormState({ mode: 'edit', market: selectedMarket })}
               onEditSections={(selectedMarket) => setSectionEditorState({ mode: 'market', market: selectedMarket })}
+              onDeleteMarket={handleRequestDeleteMarket}
+              canDeleteMarket={sortedMarkets.length > 1}
               onMoveSection={handleMoveSection}
             />
           ))}
@@ -393,6 +454,14 @@ export function MarketsScreen() {
         onCancel={() => setSectionEditorState(null)}
         onSave={handleSaveEditedSections}
       />
+
+      <ConfirmDeleteMarketModal
+        visible={Boolean(marketPendingDeletion)}
+        marketName={marketPendingDeletion?.name ?? ''}
+        isSaving={isSaving}
+        onCancel={handleCancelDeleteMarket}
+        onConfirm={handleConfirmDeleteMarket}
+      />
     </>
   );
 }
@@ -405,6 +474,8 @@ interface MarketRouteCardProps {
   onSelectMarket: (market: Market) => void;
   onEditMarket: (market: Market) => void;
   onEditSections: (market: Market) => void;
+  onDeleteMarket: (market: Market) => void;
+  canDeleteMarket: boolean;
   onMoveSection: (market: Market, sectionId: string, direction: MarketSectionMoveDirection) => void;
 }
 
@@ -416,6 +487,8 @@ function MarketRouteCard({
   onSelectMarket,
   onEditMarket,
   onEditSections,
+  onDeleteMarket,
+  canDeleteMarket,
   onMoveSection,
 }: MarketRouteCardProps) {
   const theme = useAppTheme();
@@ -454,6 +527,12 @@ function MarketRouteCard({
             disabled={isSaving || isActive}
             highlighted={!isActive}
             onPress={() => onSelectMarket(market)}
+          />
+          <SecondaryActionButton
+            label="Apagar"
+            disabled={isSaving || !canDeleteMarket}
+            danger
+            onPress={() => onDeleteMarket(market)}
           />
         </View>
       </View>
@@ -513,6 +592,56 @@ function MarketRouteCard({
         })}
       </View>
     </AppCard>
+  );
+}
+
+interface ConfirmDeleteMarketModalProps {
+  visible: boolean;
+  marketName: string;
+  isSaving: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function ConfirmDeleteMarketModal({
+  visible,
+  marketName,
+  isSaving,
+  onCancel,
+  onConfirm,
+}: ConfirmDeleteMarketModalProps) {
+  const theme = useAppTheme();
+  const styles = createStyles(theme);
+
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <AppText variant="subtitle" style={styles.modalTitle}>Apagar supermercado?</AppText>
+          <AppText muted style={styles.modalDescription}>
+            Você está prestes a apagar "{marketName}". As listas associadas ao mercado não serão apagadas, mas o mercado deixará de aparecer no cadastro.
+          </AppText>
+
+          <View style={styles.modalActions}>
+            <Pressable
+              onPress={onCancel}
+              disabled={isSaving}
+              style={({ pressed }) => [styles.modalButton, styles.modalCancelButton, pressed ? styles.pressed : null]}
+            >
+              <AppText variant="caption" style={styles.modalCancelText}>Cancelar</AppText>
+            </Pressable>
+
+            <Pressable
+              onPress={onConfirm}
+              disabled={isSaving}
+              style={({ pressed }) => [styles.modalButton, styles.modalDangerButton, pressed ? styles.pressed : null]}
+            >
+              <AppText variant="caption" style={styles.modalDangerText}>{isSaving ? 'Apagando' : 'Apagar'}</AppText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1025,10 +1154,11 @@ interface SecondaryActionButtonProps {
   label: string;
   disabled: boolean;
   highlighted?: boolean;
+  danger?: boolean;
   onPress: () => void;
 }
 
-function SecondaryActionButton({ label, disabled, highlighted = false, onPress }: SecondaryActionButtonProps) {
+function SecondaryActionButton({ label, disabled, highlighted = false, danger = false, onPress }: SecondaryActionButtonProps) {
   const theme = useAppTheme();
   const styles = createStyles(theme);
 
@@ -1039,6 +1169,7 @@ function SecondaryActionButton({ label, disabled, highlighted = false, onPress }
       style={({ pressed }) => [
         styles.secondaryActionButton,
         highlighted ? styles.secondaryActionButtonHighlighted : null,
+        danger ? styles.secondaryActionButtonDanger : null,
         disabled ? styles.secondaryActionButtonDisabled : null,
         pressed && !disabled ? styles.pressed : null,
       ]}
@@ -1048,6 +1179,7 @@ function SecondaryActionButton({ label, disabled, highlighted = false, onPress }
         style={[
           styles.secondaryActionButtonText,
           highlighted ? styles.secondaryActionButtonTextHighlighted : null,
+          danger ? styles.secondaryActionButtonTextDanger : null,
           disabled ? styles.secondaryActionButtonTextDisabled : null,
         ]}
       >
@@ -1261,6 +1393,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     },
     marketActions: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       gap: theme.spacing.sm,
     },
     secondaryActionButton: {
@@ -1275,6 +1408,9 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     secondaryActionButtonHighlighted: {
       backgroundColor: theme.colors.primarySoft,
     },
+    secondaryActionButtonDanger: {
+      backgroundColor: theme.mode === 'dark' ? 'rgba(248, 113, 113, 0.16)' : '#FEE2E2',
+    },
     secondaryActionButtonDisabled: {
       opacity: 0.62,
     },
@@ -1284,6 +1420,9 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     },
     secondaryActionButtonTextHighlighted: {
       color: theme.colors.primaryStrong,
+    },
+    secondaryActionButtonTextDanger: {
+      color: theme.mode === 'dark' ? '#FCA5A5' : '#B91C1C',
     },
     secondaryActionButtonTextDisabled: {
       color: theme.colors.textSubtle,

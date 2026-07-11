@@ -7,8 +7,9 @@ import { defaultMarkets } from '../seed/defaultMarkets';
 const marketsStorageKey = '@lista-mercado-facil:markets';
 const activeMarketStorageKey = '@lista-mercado-facil:active-market-id';
 const marketsVersionStorageKey = '@lista-mercado-facil:markets-version';
-const currentMarketsVersion = '2026-07-11-zaffari-fernandes-vieira-corredores-v1';
+const currentMarketsVersion = '2026-07-11-zaffari-fernandes-vieira-corredores-v2';
 const zaffariMarketId = 'market-zaffari-fernandes-vieira';
+const deletedZaffariMarketStorageKey = '@lista-mercado-facil:deleted-zaffari-market';
 
 export class WebMarketRepository implements MarketRepository {
   async getAll(): Promise<Market[]> {
@@ -60,6 +61,10 @@ export class WebMarketRepository implements MarketRepository {
       ? markets.map((currentMarket) => (currentMarket.id === normalizedMarket.id ? normalizedMarket : currentMarket))
       : [...markets, normalizedMarket];
 
+    if (normalizedMarket.id === zaffariMarketId) {
+      await AsyncStorage.removeItem(deletedZaffariMarketStorageKey);
+    }
+
     await this.writeMarkets(nextMarkets);
 
     const activeMarketId = await this.getActiveMarketId();
@@ -75,6 +80,11 @@ export class WebMarketRepository implements MarketRepository {
   async delete(id: string): Promise<void> {
     const markets = await this.getAll();
     const nextMarkets = markets.filter((market) => market.id !== id);
+
+    if (id === zaffariMarketId) {
+      await AsyncStorage.setItem(deletedZaffariMarketStorageKey, 'true');
+    }
+
     await this.writeMarkets(nextMarkets);
 
     const activeMarketId = await this.getActiveMarketId();
@@ -92,7 +102,10 @@ export class WebMarketRepository implements MarketRepository {
       return normalizedMarkets;
     }
 
-    const defaultZaffariMarket = defaultMarkets.find((market) => market.id === zaffariMarketId);
+    const [defaultZaffariMarket, wasZaffariDeleted] = await Promise.all([
+      Promise.resolve(defaultMarkets.find((market) => market.id === zaffariMarketId)),
+      AsyncStorage.getItem(deletedZaffariMarketStorageKey).then((value) => value === 'true'),
+    ]);
 
     if (!defaultZaffariMarket) {
       await AsyncStorage.setItem(marketsVersionStorageKey, currentMarketsVersion);
@@ -107,14 +120,16 @@ export class WebMarketRepository implements MarketRepository {
       return {
         ...market,
         name: market.name || defaultZaffariMarket.name,
-        address: market.address ?? defaultZaffariMarket.address,
+        address: undefined,
         isDefault: market.isDefault ?? true,
         sections: defaultZaffariMarket.sections,
       };
     });
 
     const hasZaffariMarket = migratedMarkets.some((market) => market.id === zaffariMarketId);
-    const nextMarkets = hasZaffariMarket ? migratedMarkets : [defaultZaffariMarket, ...migratedMarkets];
+    const nextMarkets = hasZaffariMarket || wasZaffariDeleted
+      ? migratedMarkets
+      : [defaultZaffariMarket, ...migratedMarkets];
 
     await this.writeMarkets(nextMarkets);
     await AsyncStorage.setItem(marketsVersionStorageKey, currentMarketsVersion);

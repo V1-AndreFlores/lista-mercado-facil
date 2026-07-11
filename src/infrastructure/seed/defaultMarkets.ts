@@ -6,7 +6,6 @@ export const defaultMarkets: Market[] = [
   {
     id: zaffariMarketId,
     name: 'Zaffari Fernandes Vieira',
-    address: 'Rua Fernandes Vieira, Porto Alegre - RS',
     isDefault: true,
     sections: [
       { id: 'section-001', marketId: zaffariMarketId, aisleNumber: '1', name: 'Óleos, Conservas e Molhos', routeOrder: 1, isActive: true },
