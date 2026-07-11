@@ -34,9 +34,7 @@ import {
   removeShoppingListItem,
   setActiveList,
   toggleShoppingListItemPurchased,
-  updateShoppingListItemQuantityAndUnit,
   updateShoppingListItemSection,
-  updateShoppingListItemUnitPrice,
 } from "../../app/store/slices/shoppingListSlice";
 import { AppButton } from "../components/AppButton";
 import { AppCard } from "../components/AppCard";
@@ -268,7 +266,7 @@ export function ShoppingListScreen() {
               updatedAt: new Date().toISOString(),
             }
           : generatedItem),
-        ...(latestUnitPriceCents ? { unitPriceCents: latestUnitPriceCents } : {}),
+        ...(typeof latestUnitPriceCents === "number" ? { unitPriceCents: latestUnitPriceCents } : {}),
       };
 
       await shoppingListRepository.addItem(newItem);
@@ -448,46 +446,43 @@ export function ShoppingListScreen() {
   }
 
   async function handleConfirmEditItemQuantity() {
-    if (!itemPendingQuantityEdit || isSaving) {
+    if (!itemPendingQuantityEdit || !activeList || isSaving) {
       return;
     }
 
     const parsedQuantity = resolveQuantityInput(quantityEditValue);
     const unitPriceCents = parseCurrencyInputToCents(unitPriceEditValue);
+    const now = new Date().toISOString();
 
     setIsSaving(true);
     setQuantityEditValue(formatQuantityValue(parsedQuantity));
     setQuantityEditError(null);
 
     try {
-      const now = new Date().toISOString();
       const shoppingListRepository = await createShoppingListRepository();
+      const updatedItem: ShoppingListItem = {
+        ...itemPendingQuantityEdit,
+        quantity: parsedQuantity,
+        unit: defaultProductUnit,
+        updatedAt: now,
+      };
 
-      await shoppingListRepository.updateItemQuantityAndUnit(
-        itemPendingQuantityEdit.id,
-        parsedQuantity,
-        defaultProductUnit,
-      );
-      await shoppingListRepository.updateItemUnitPrice(
-        itemPendingQuantityEdit.id,
-        unitPriceCents ?? null,
-      );
+      if (typeof unitPriceCents === "number" && Number.isFinite(unitPriceCents) && unitPriceCents > 0) {
+        updatedItem.unitPriceCents = Math.trunc(unitPriceCents);
+      } else {
+        delete updatedItem.unitPriceCents;
+      }
 
-      dispatch(
-        updateShoppingListItemQuantityAndUnit({
-          itemId: itemPendingQuantityEdit.id,
-          quantity: parsedQuantity,
-          unit: defaultProductUnit,
-          updatedAt: now,
-        }),
-      );
-      dispatch(
-        updateShoppingListItemUnitPrice({
-          itemId: itemPendingQuantityEdit.id,
-          unitPriceCents,
-          updatedAt: now,
-        }),
-      );
+      const updatedList: ShoppingList = {
+        ...activeList,
+        items: activeList.items.map((item) =>
+          item.id === updatedItem.id ? updatedItem : item,
+        ),
+        updatedAt: now,
+      };
+
+      await shoppingListRepository.update(updatedList);
+      dispatch(setActiveList(updatedList));
 
       setItemPendingQuantityEdit(null);
       setQuantityEditValue(defaultProductQuantity);
@@ -944,7 +939,7 @@ export function ShoppingListScreen() {
                 <TextInput
                   value={productQuantity}
                   onChangeText={handleProductQuantityChange}
-                  placeholder="Quantidade"
+                  placeholder="Qtde"
                   placeholderTextColor={theme.colors.textSubtle}
                   style={[styles.input, styles.quantityInput]}
                   keyboardType="number-pad"
@@ -985,12 +980,12 @@ export function ShoppingListScreen() {
           ) : (
             <View style={styles.sectionsContainer}>
               <View style={styles.listHeader}>
-                <View>
+                <View style={styles.listHeaderTextContainer}>
                   <AppText variant="label" accent>
                     Rota de compra
                   </AppText>
                   <AppText muted style={styles.listHint}>
-                    Itens comprados ficam no final de cada setor.
+                    Itens comprados ficam no final de cada corredor.
                   </AppText>
                 </View>
 
@@ -1192,7 +1187,7 @@ function EmptyShoppingList() {
       <AppText variant="subtitle">Sua lista ainda está vazia</AppText>
       <AppText muted style={styles.emptyText}>
         Adicione produtos para montar a primeira rota de compra. Itens como
-        banana, arroz, leite e detergente já serão agrupados por setor.
+        banana, arroz, leite e detergente já serão agrupados por corredor.
       </AppText>
     </AppCard>
   );
@@ -1780,7 +1775,7 @@ function ChangeItemSectionModal({
       <View style={styles.modalOverlay}>
         <View style={[styles.modalCard, styles.sectionModalCard]}>
           <AppText variant="subtitle" style={styles.modalTitle}>
-            Alterar setor
+            Alterar corredor
           </AppText>
           <AppText muted style={styles.modalDescription}>
             Escolha onde "{itemName}" deve aparecer neste supermercado. O app
@@ -1810,7 +1805,7 @@ function ChangeItemSectionModal({
                     </AppText>
                     {isSelected ? (
                       <AppText variant="caption" accent>
-                        Setor atual
+                        Corredor atual
                       </AppText>
                     ) : null}
                   </View>
@@ -1886,74 +1881,74 @@ function EditItemQuantityModal({
           <View style={[styles.modalCard, styles.editProductModalCard]}>
             <AppText variant="subtitle" style={styles.modalTitle}>
               Editar produto
-          </AppText>
-          <AppText muted style={styles.modalDescription}>
-            Ajuste a quantidade e o preço unitário de "{itemName}".
-          </AppText>
-
-          <View style={styles.modalQuantityBlock}>
-            <View style={styles.modalInputGroup}>
-              <AppText variant="caption" style={styles.modalInputLabel}>Quantidade</AppText>
-              <TextInput
-                value={quantityValue}
-                onChangeText={onChangeQuantity}
-                placeholder="1"
-                placeholderTextColor={theme.colors.textSubtle}
-                style={[styles.input, styles.modalQuantityInput]}
-                keyboardType="number-pad"
-                returnKeyType="next"
-                onBlur={onBlurQuantity}
-              />
-            </View>
-
-            <View style={styles.modalInputGroup}>
-              <AppText variant="caption" style={styles.modalInputLabel}>Preço unitário</AppText>
-              <TextInput
-                value={unitPriceValue}
-                onChangeText={onChangeUnitPrice}
-                placeholder="Opcional"
-                placeholderTextColor={theme.colors.textSubtle}
-                style={[styles.input, styles.modalQuantityInput]}
-                keyboardType="number-pad"
-                returnKeyType="done"
-                onSubmitEditing={onConfirm}
-              />
-            </View>
-          </View>
-
-          {error ? (
-            <AppText variant="caption" style={styles.validationMessage}>
-              {error}
             </AppText>
-          ) : null}
+            <AppText muted style={styles.modalDescription}>
+              Ajuste a quantidade e o preço unitário de "{itemName}".
+            </AppText>
 
-          <View style={styles.modalActions}>
-            <Pressable
-              onPress={onCancel}
-              style={({ pressed }) => [
-                styles.modalButton,
-                styles.modalCancelButton,
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <AppText variant="caption" style={styles.modalCancelText}>
-                Cancelar
-              </AppText>
-            </Pressable>
+            <View style={styles.modalQuantityBlock}>
+              <View style={styles.modalInputGroup}>
+                <AppText variant="caption" style={styles.modalInputLabel}>Quantidade</AppText>
+                <TextInput
+                  value={quantityValue}
+                  onChangeText={onChangeQuantity}
+                  placeholder="1"
+                  placeholderTextColor={theme.colors.textSubtle}
+                  style={[styles.input, styles.modalQuantityInput]}
+                  keyboardType="number-pad"
+                  returnKeyType="next"
+                  onBlur={onBlurQuantity}
+                />
+              </View>
 
-            <Pressable
-              onPress={onConfirm}
-              style={({ pressed }) => [
-                styles.modalButton,
-                styles.modalPrimaryButton,
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <AppText variant="caption" style={styles.modalPrimaryText}>
-                Salvar
+              <View style={styles.modalInputGroup}>
+                <AppText variant="caption" style={styles.modalInputLabel}>Preço unitário</AppText>
+                <TextInput
+                  value={unitPriceValue}
+                  onChangeText={onChangeUnitPrice}
+                  placeholder="Opcional"
+                  placeholderTextColor={theme.colors.textSubtle}
+                  style={[styles.input, styles.modalQuantityInput]}
+                  keyboardType="number-pad"
+                  returnKeyType="done"
+                  onSubmitEditing={onConfirm}
+                />
+              </View>
+            </View>
+
+            {error ? (
+              <AppText variant="caption" style={styles.validationMessage}>
+                {error}
               </AppText>
-            </Pressable>
-          </View>
+            ) : null}
+
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={onCancel}
+                style={({ pressed }) => [
+                  styles.modalButton,
+                  styles.modalCancelButton,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <AppText variant="caption" style={styles.modalCancelText}>
+                  Cancelar
+                </AppText>
+              </Pressable>
+
+              <Pressable
+                onPress={onConfirm}
+                style={({ pressed }) => [
+                  styles.modalButton,
+                  styles.modalPrimaryButton,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <AppText variant="caption" style={styles.modalPrimaryText}>
+                  Salvar
+                </AppText>
+              </Pressable>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -2021,12 +2016,17 @@ function ShoppingItemRow({
           {formatItemName(item)}
         </AppText>
         <AppText variant="caption" subtle style={styles.itemQuantityText}>
-          {item.isPurchased ? "Comprado" : "Pendente"} · {item.sectionName}
+          {item.isPurchased ? "Comprado" : "Pendente"}
         </AppText>
         {item.unitPriceCents ? (
-          <AppText variant="caption" style={styles.itemPriceText}>
-            {formatItemPrice(item)}
-          </AppText>
+          <View style={styles.itemPriceContainer}>
+            <AppText variant="caption" style={styles.itemPriceText}>
+              {formatCurrencyCents(item.unitPriceCents)} unitário
+            </AppText>
+            <AppText variant="caption" style={styles.itemPriceText}>
+              {formatCurrencyCents(multiplyCurrencyCents(item.unitPriceCents, item.quantity))} total
+            </AppText>
+          </View>
         ) : null}
       </Pressable>
 
@@ -2039,7 +2039,7 @@ function ShoppingItemRow({
           ]}
         >
           <AppText variant="caption" style={styles.itemActionButtonText}>
-            Setor
+            Corredor
           </AppText>
         </Pressable>
 
@@ -2098,16 +2098,6 @@ function formatQuantityValue(quantity: number): string {
   }
 
   return String(Math.trunc(quantity));
-}
-
-function formatItemPrice(item: ShoppingListItem): string {
-  const itemTotalCents = multiplyCurrencyCents(item.unitPriceCents, item.quantity);
-
-  if (!item.unitPriceCents || itemTotalCents <= 0) {
-    return "";
-  }
-
-  return `${formatCurrencyCents(item.unitPriceCents)} un. · Total ${formatCurrencyCents(itemTotalCents)}`;
 }
 
 function formatItemName(item: ShoppingListItem): string {
@@ -2238,9 +2228,9 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     },
     quantityInput: {
       flex: 0,
-      width: 96,
-      minWidth: 82,
-      paddingHorizontal: theme.spacing.md,
+      width: 88,
+      minWidth: 76,
+      paddingHorizontal: theme.spacing.sm,
       textAlign: "center",
     },
     priceInput: {
@@ -2321,7 +2311,12 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      gap: theme.spacing.md,
+      gap: theme.spacing.sm,
+    },
+    listHeaderTextContainer: {
+      flex: 1,
+      minWidth: 0,
+      paddingRight: theme.spacing.sm,
     },
     listHint: {
       marginTop: 2,
@@ -2330,9 +2325,10 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     },
     clearButton: {
       minHeight: 34,
+      flexShrink: 0,
       justifyContent: "center",
       borderRadius: theme.radius.md,
-      paddingHorizontal: theme.spacing.md,
+      paddingHorizontal: theme.spacing.sm,
       backgroundColor: theme.colors.surfaceElevated,
     },
     clearButtonText: {
@@ -2432,13 +2428,17 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       marginTop: 2,
       fontWeight: "800",
     },
+    itemPriceContainer: {
+      marginTop: 4,
+      gap: 1,
+    },
     itemPriceText: {
-      marginTop: 2,
       color: theme.colors.primaryStrong,
       fontWeight: "900",
+      lineHeight: 18,
     },
     itemActions: {
-      width: 88,
+      width: 94,
       gap: 6,
     },
     itemActionButton: {
