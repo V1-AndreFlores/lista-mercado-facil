@@ -127,7 +127,7 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
     const normalizedList = this.normalizeList(list);
 
     await database.runAsync(
-      `INSERT OR REPLACE INTO shopping_lists
+      `INSERT OR IGNORE INTO shopping_lists
        (id, market_id, name, is_active, status, completed_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -139,6 +139,20 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
         normalizedList.completedAt ?? null,
         normalizedList.createdAt,
         normalizedList.updatedAt,
+      ],
+    );
+
+    await database.runAsync(
+      `UPDATE shopping_lists
+       SET market_id = ?, name = ?, status = ?, completed_at = ?, updated_at = ?
+       WHERE id = ?`,
+      [
+        normalizedList.marketId,
+        normalizedList.name,
+        normalizedList.status,
+        normalizedList.completedAt ?? null,
+        normalizedList.updatedAt,
+        normalizedList.id,
       ],
     );
 
@@ -188,12 +202,12 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
       throw new Error('Lista de origem não encontrada.');
     }
 
-    const newList = await this.createActive(sourceList.marketId, resolveShoppingListName(name));
     const latestUnitPrices = await this.resolveLatestUnitPricesByProduct();
+    const newList = await this.createActive(sourceList.marketId, resolveShoppingListName(name));
     const now = new Date().toISOString();
 
     for (const item of sourceList.items) {
-      const latestUnitPriceCents = latestUnitPrices[item.normalizedName] ?? item.unitPriceCents;
+      const latestUnitPriceCents = latestUnitPrices.get(item.normalizedName) ?? item.unitPriceCents;
 
       await this.addItem({
         ...item,
@@ -207,27 +221,6 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
     }
 
     return this.getById(newList.id) as Promise<ShoppingList>;
-  }
-
-  async getLatestUnitPriceCentsByProduct(productNormalizedName: string): Promise<number | null> {
-    await this.ensureListSchema();
-    const database = await getDatabase();
-    const row = await database.getFirstAsync<{ unit_price_cents: number | null }>(
-      `SELECT item.unit_price_cents
-       FROM shopping_list_items item
-       INNER JOIN shopping_lists list ON list.id = item.list_id
-       WHERE list.status = 'completed'
-         AND item.normalized_name = ?
-         AND item.unit_price_cents IS NOT NULL
-         AND item.unit_price_cents > 0
-       ORDER BY COALESCE(list.completed_at, list.updated_at) DESC, item.updated_at DESC
-       LIMIT 1`,
-      [productNormalizedName],
-    );
-
-    return typeof row?.unit_price_cents === 'number' && row.unit_price_cents > 0
-      ? Math.trunc(row.unit_price_cents)
-      : null;
   }
 
   async deleteList(listId: string): Promise<void> {
@@ -262,13 +255,33 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
     }
   }
 
+  async getLatestUnitPriceCentsByProduct(productNormalizedName: string): Promise<number | null> {
+    await this.ensureListSchema();
+    const database = await getDatabase();
+    const row = await database.getFirstAsync<{ unit_price_cents: number | null }>(
+      `SELECT item.unit_price_cents
+       FROM shopping_list_items item
+       INNER JOIN shopping_lists list ON list.id = item.list_id
+       WHERE item.normalized_name = ?
+         AND list.status = 'completed'
+         AND item.unit_price_cents IS NOT NULL
+         AND item.unit_price_cents > 0
+       ORDER BY COALESCE(list.completed_at, list.updated_at) DESC, item.updated_at DESC
+       LIMIT 1`,
+      [productNormalizedName],
+    );
+
+    return typeof row?.unit_price_cents === 'number' && row.unit_price_cents > 0
+      ? Math.trunc(row.unit_price_cents)
+      : null;
+  }
+
   async addItem(item: ShoppingListItem): Promise<void> {
     await this.ensureListSchema();
     const database = await getDatabase();
     const now = new Date().toISOString();
 
     await this.upsertItem(item);
-
     await database.runAsync(
       'UPDATE shopping_lists SET updated_at = ? WHERE id = ?',
       [now, item.listId],
@@ -279,10 +292,7 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
     await this.ensureListSchema();
     const database = await getDatabase();
     const now = new Date().toISOString();
-    const itemRow = await database.getFirstAsync<{ list_id: string }>(
-      'SELECT list_id FROM shopping_list_items WHERE id = ? LIMIT 1',
-      [itemId],
-    );
+    const itemRow = await this.getItemListId(itemId);
 
     await database.runAsync(
       `UPDATE shopping_list_items
@@ -291,22 +301,14 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
       [isPurchased ? 1 : 0, now, itemId],
     );
 
-    if (itemRow?.list_id) {
-      await database.runAsync(
-        'UPDATE shopping_lists SET updated_at = ? WHERE id = ?',
-        [now, itemRow.list_id],
-      );
-    }
+    await this.touchList(itemRow?.list_id, now);
   }
 
   async updateItemSection(itemId: string, sectionName: string): Promise<void> {
     await this.ensureListSchema();
     const database = await getDatabase();
     const now = new Date().toISOString();
-    const itemRow = await database.getFirstAsync<{ list_id: string }>(
-      'SELECT list_id FROM shopping_list_items WHERE id = ? LIMIT 1',
-      [itemId],
-    );
+    const itemRow = await this.getItemListId(itemId);
 
     await database.runAsync(
       `UPDATE shopping_list_items
@@ -315,85 +317,50 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
       [sectionName, now, itemId],
     );
 
-    if (itemRow?.list_id) {
-      await database.runAsync(
-        'UPDATE shopping_lists SET updated_at = ? WHERE id = ?',
-        [now, itemRow.list_id],
-      );
-    }
+    await this.touchList(itemRow?.list_id, now);
   }
 
   async updateItemQuantityAndUnit(itemId: string, quantity: number, unit: string): Promise<void> {
     await this.ensureListSchema();
     const database = await getDatabase();
     const now = new Date().toISOString();
-    const itemRow = await database.getFirstAsync<{ list_id: string }>(
-      'SELECT list_id FROM shopping_list_items WHERE id = ? LIMIT 1',
-      [itemId],
-    );
+    const itemRow = await this.getItemListId(itemId);
 
     await database.runAsync(
       `UPDATE shopping_list_items
        SET quantity = ?, unit = ?, updated_at = ?
        WHERE id = ?`,
-      [String(quantity > 0 ? quantity : 1), unit || 'un', now, itemId],
+      [String(quantity > 0 ? Math.trunc(quantity) : 1), unit || 'un', now, itemId],
     );
 
-    if (itemRow?.list_id) {
-      await database.runAsync(
-        'UPDATE shopping_lists SET updated_at = ? WHERE id = ?',
-        [now, itemRow.list_id],
-      );
-    }
+    await this.touchList(itemRow?.list_id, now);
   }
 
   async updateItemUnitPrice(itemId: string, unitPriceCents: number | null): Promise<void> {
     await this.ensureListSchema();
     const database = await getDatabase();
     const now = new Date().toISOString();
-    const itemRow = await database.getFirstAsync<{ list_id: string }>(
-      'SELECT list_id FROM shopping_list_items WHERE id = ? LIMIT 1',
-      [itemId],
-    );
-
-    const normalizedUnitPriceCents = typeof unitPriceCents === 'number'
-      && Number.isFinite(unitPriceCents)
-      && unitPriceCents > 0
-      ? Math.trunc(unitPriceCents)
-      : null;
+    const itemRow = await this.getItemListId(itemId);
+    const safeUnitPriceCents = this.normalizeUnitPriceCents(unitPriceCents);
 
     await database.runAsync(
       `UPDATE shopping_list_items
        SET unit_price_cents = ?, updated_at = ?
        WHERE id = ?`,
-      [normalizedUnitPriceCents, now, itemId],
+      [safeUnitPriceCents, now, itemId],
     );
 
-    if (itemRow?.list_id) {
-      await database.runAsync(
-        'UPDATE shopping_lists SET updated_at = ? WHERE id = ?',
-        [now, itemRow.list_id],
-      );
-    }
+    await this.touchList(itemRow?.list_id, now);
   }
 
   async removeItem(itemId: string): Promise<void> {
     await this.ensureListSchema();
     const database = await getDatabase();
     const now = new Date().toISOString();
-    const itemRow = await database.getFirstAsync<{ list_id: string }>(
-      'SELECT list_id FROM shopping_list_items WHERE id = ? LIMIT 1',
-      [itemId],
-    );
+    const itemRow = await this.getItemListId(itemId);
 
     await database.runAsync('DELETE FROM shopping_list_items WHERE id = ?', [itemId]);
-
-    if (itemRow?.list_id) {
-      await database.runAsync(
-        'UPDATE shopping_lists SET updated_at = ? WHERE id = ?',
-        [now, itemRow.list_id],
-      );
-    }
+    await this.touchList(itemRow?.list_id, now);
   }
 
   async clearItems(listId: string): Promise<void> {
@@ -428,43 +395,89 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
     await database.runAsync('DELETE FROM shopping_list_items WHERE list_id = ?', [list.id]);
 
     for (const item of list.items) {
-      await this.upsertItem({
-        ...item,
-        listId: list.id,
-      });
+      await this.upsertItem({ ...item, listId: list.id });
     }
   }
 
   private async upsertItem(item: ShoppingListItem): Promise<void> {
     const database = await getDatabase();
-    const normalizedUnitPriceCents = typeof item.unitPriceCents === 'number'
-      && Number.isFinite(item.unitPriceCents)
-      && item.unitPriceCents > 0
-      ? Math.trunc(item.unitPriceCents)
-      : null;
+    const normalizedItem = this.normalizeItem(item);
 
     await database.runAsync(
       `INSERT OR REPLACE INTO shopping_list_items
        (id, list_id, name, normalized_name, quantity, unit, unit_price_cents, section_name, category_id, is_purchased, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        item.id,
-        item.listId,
-        item.name,
-        item.normalizedName,
-        String(item.quantity ?? 1),
-        item.unit ?? 'un',
-        normalizedUnitPriceCents,
-        item.sectionName,
-        item.categoryId ?? null,
-        item.isPurchased ? 1 : 0,
-        item.createdAt,
-        item.updatedAt,
+        normalizedItem.id,
+        normalizedItem.listId,
+        normalizedItem.name,
+        normalizedItem.normalizedName,
+        String(normalizedItem.quantity),
+        normalizedItem.unit,
+        this.normalizeUnitPriceCents(normalizedItem.unitPriceCents),
+        normalizedItem.sectionName,
+        normalizedItem.categoryId ?? null,
+        normalizedItem.isPurchased ? 1 : 0,
+        normalizedItem.createdAt,
+        normalizedItem.updatedAt,
       ],
     );
   }
 
-  private async resolveLatestUnitPricesByProduct(): Promise<Record<string, number>> {
+  private normalizeList(list: ShoppingList): ShoppingList {
+    return {
+      ...list,
+      name: resolveShoppingListName(list.name),
+      status: list.status ?? 'active',
+      items: Array.isArray(list.items) ? list.items.map((item) => this.normalizeItem(item)) : [],
+    };
+  }
+
+  private normalizeItem(item: ShoppingListItem): ShoppingListItem {
+    const quantity = Number(item.quantity);
+    const unitPriceCents = this.normalizeUnitPriceCents(item.unitPriceCents);
+    const normalizedItem: ShoppingListItem = {
+      ...item,
+      quantity: Number.isFinite(quantity) && quantity > 0 ? Math.trunc(quantity) : 1,
+      unit: item.unit ?? 'un',
+    };
+
+    if (typeof unitPriceCents === 'number') {
+      normalizedItem.unitPriceCents = unitPriceCents;
+    } else {
+      delete normalizedItem.unitPriceCents;
+    }
+
+    return normalizedItem;
+  }
+
+  private normalizeUnitPriceCents(value: number | null | undefined): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+      return null;
+    }
+
+    return Math.trunc(value);
+  }
+
+  private async getItemListId(itemId: string): Promise<{ list_id: string } | null> {
+    const database = await getDatabase();
+
+    return database.getFirstAsync<{ list_id: string }>(
+      'SELECT list_id FROM shopping_list_items WHERE id = ? LIMIT 1',
+      [itemId],
+    );
+  }
+
+  private async touchList(listId: string | undefined, updatedAt: string): Promise<void> {
+    if (!listId) {
+      return;
+    }
+
+    const database = await getDatabase();
+    await database.runAsync('UPDATE shopping_lists SET updated_at = ? WHERE id = ?', [updatedAt, listId]);
+  }
+
+  private async resolveLatestUnitPricesByProduct(): Promise<Map<string, number>> {
     await this.ensureListSchema();
     const database = await getDatabase();
     const rows = await database.getAllAsync<{
@@ -480,54 +493,28 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
        ORDER BY COALESCE(list.completed_at, list.updated_at) DESC, item.updated_at DESC`,
     );
 
-    return rows.reduce<Record<string, number>>((accumulator, row) => {
-      if (
-        !accumulator[row.normalized_name]
-        && typeof row.unit_price_cents === 'number'
-        && row.unit_price_cents > 0
-      ) {
-        accumulator[row.normalized_name] = Math.trunc(row.unit_price_cents);
+    const latestPrices = new Map<string, number>();
+
+    for (const row of rows) {
+      if (latestPrices.has(row.normalized_name)) {
+        continue;
       }
 
-      return accumulator;
-    }, {});
-  }
+      if (typeof row.unit_price_cents === 'number' && row.unit_price_cents > 0) {
+        latestPrices.set(row.normalized_name, Math.trunc(row.unit_price_cents));
+      }
+    }
 
-  private normalizeList(list: ShoppingList): ShoppingList {
-    return {
-      ...list,
-      name: resolveShoppingListName(list.name),
-      status: list.status ?? 'active',
-      items: Array.isArray(list.items) ? list.items : [],
-    };
+    return latestPrices;
   }
 
   private async ensureListSchema(): Promise<void> {
     const database = await getDatabase();
 
-    try {
-      await database.runAsync("ALTER TABLE shopping_lists ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
-    } catch {
-      // Column already exists.
-    }
-
-    try {
-      await database.runAsync('ALTER TABLE shopping_lists ADD COLUMN completed_at TEXT NULL');
-    } catch {
-      // Column already exists.
-    }
-
-    try {
-      await database.runAsync("ALTER TABLE shopping_list_items ADD COLUMN unit TEXT NOT NULL DEFAULT 'un'");
-    } catch {
-      // Column already exists.
-    }
-
-    try {
-      await database.runAsync('ALTER TABLE shopping_list_items ADD COLUMN unit_price_cents INTEGER NULL');
-    } catch {
-      // Column already exists.
-    }
+    await this.tryRun("ALTER TABLE shopping_lists ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
+    await this.tryRun('ALTER TABLE shopping_lists ADD COLUMN completed_at TEXT NULL');
+    await this.tryRun("ALTER TABLE shopping_list_items ADD COLUMN unit TEXT NOT NULL DEFAULT 'un'");
+    await this.tryRun('ALTER TABLE shopping_list_items ADD COLUMN unit_price_cents INTEGER NULL');
 
     await database.runAsync(
       "UPDATE shopping_list_items SET quantity = '1' WHERE quantity IS NULL OR quantity = ''",
@@ -536,5 +523,15 @@ export class SQLiteShoppingListRepository implements ShoppingListRepository {
     await database.runAsync(
       "UPDATE shopping_lists SET status = 'active' WHERE status IS NULL OR status = ''",
     );
+  }
+
+  private async tryRun(sql: string): Promise<void> {
+    const database = await getDatabase();
+
+    try {
+      await database.runAsync(sql);
+    } catch {
+      // Column already exists.
+    }
   }
 }

@@ -1,6 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 import { databaseSchema } from './schema';
 import { seedInitialData } from './seedInitialData';
+import { ensureDatabaseIntegrity } from './databaseIntegrity';
 
 const databaseName = 'lista_mercado_facil.db';
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -30,4 +31,5 @@ async function initializeDatabaseInternal(): Promise<void> {
   await database.execAsync('PRAGMA foreign_keys = ON;');
   await database.execAsync(databaseSchema);
   await seedInitialData(database);
+  await ensureDatabaseIntegrity(database);
 }
