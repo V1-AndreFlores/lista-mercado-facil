@@ -11,10 +11,15 @@
     ],
     "android": {
       "package": "com.andre.alves.listamercadofacil",
+      "icon": "./assets/adaptive-icon-android.png",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/adaptive-icon-android.png",
         "backgroundColor": "#063B8F"
       }
+    },
+    "ios": {
+      "icon": "./assets/icon-ios.png",
+      "supportsTablet": true
     },
     "extra": {
       "eas": {
