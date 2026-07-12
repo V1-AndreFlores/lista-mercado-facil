@@ -106,7 +106,13 @@ export function ShoppingListScreen() {
   const purchasedItems =
     activeList?.items.filter((item) => item.isPurchased).length ?? 0;
   const pendingItems = totalItems - purchasedItems;
-  const purchasedTotalCents = useMemo(
+  const plannedTotalCents = useMemo(
+    () => activeList?.items.reduce((total, item) => (
+      total + multiplyCurrencyCents(item.unitPriceCents, item.quantity)
+    ), 0) ?? 0,
+    [activeList],
+  );
+  const cartTotalCents = useMemo(
     () => activeList?.items.reduce((total, item) => {
       if (!item.isPurchased) {
         return total;
@@ -116,7 +122,7 @@ export function ShoppingListScreen() {
     }, 0) ?? 0,
     [activeList],
   );
-  const shouldShowPurchaseTotal = purchasedTotalCents > 0;
+  const shouldShowTotals = plannedTotalCents > 0;
   const trimmedProductName = productName.trim();
   const parsedProductQuantity = resolveQuantityInput(productQuantity);
   const isDuplicateProduct = activeList
@@ -847,15 +853,29 @@ export function ShoppingListScreen() {
             <SummaryPill label="Total" value={totalItems} />
           </View>
 
-          {shouldShowPurchaseTotal ? (
+          {shouldShowTotals ? (
             <AppCard elevated style={styles.purchaseTotalCard}>
-              <AppText variant="label" accent>Total no carrinho</AppText>
-              <AppText variant="headline" style={styles.purchaseTotalValue}>
-                {formatCurrencyCents(purchasedTotalCents)}
-              </AppText>
-              <AppText muted style={styles.purchaseTotalHint}>
-                Soma dos itens marcados como comprados com preço informado.
-              </AppText>
+              <View style={styles.purchaseTotalBlock}>
+                <AppText variant="label" accent>Total previsto</AppText>
+                <AppText variant="headline" style={styles.purchaseTotalValue}>
+                  {formatCurrencyCents(plannedTotalCents)}
+                </AppText>
+                <AppText muted style={styles.purchaseTotalHint}>
+                  Soma de todos os itens com preço informado.
+                </AppText>
+              </View>
+
+              <View style={styles.purchaseTotalDivider} />
+
+              <View style={styles.purchaseTotalBlock}>
+                <AppText variant="label" accent>Total no carrinho</AppText>
+                <AppText variant="headline" style={styles.purchaseTotalValue}>
+                  {formatCurrencyCents(cartTotalCents)}
+                </AppText>
+                <AppText muted style={styles.purchaseTotalHint}>
+                  Soma dos itens marcados como comprados com preço informado.
+                </AppText>
+              </View>
             </AppCard>
           ) : null}
 
@@ -2165,13 +2185,19 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     },
     purchaseTotalCard: {
       padding: theme.spacing.lg,
+      gap: theme.spacing.md,
+    },
+    purchaseTotalBlock: {
+      gap: theme.spacing.xs,
+    },
+    purchaseTotalDivider: {
+      height: 1,
+      backgroundColor: theme.colors.border,
     },
     purchaseTotalValue: {
-      marginTop: theme.spacing.xs,
       color: theme.colors.primary,
     },
     purchaseTotalHint: {
-      marginTop: theme.spacing.xs,
       fontSize: 13,
       lineHeight: 18,
     },
