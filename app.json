@@ -2,12 +2,13 @@
   "expo": {
     "name": "Lista de Mercado Fácil",
     "slug": "lista-mercado-facil",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "plugins": [
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-system-ui"
     ],
     "android": {
       "package": "com.andre.alves.listamercadofacil",

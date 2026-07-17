@@ -16,7 +16,7 @@ describe('ProductCategorizer', () => {
 
     const result = categorizer.categorize('sabao em po');
 
-    expect(result.sectionName).toBe('Limpeza');
+    expect(result.sectionName).toBe('Detergentes, Sabão e Desinfetantes');
   });
 
   it('deve enviar item desconhecido para Outros', () => {

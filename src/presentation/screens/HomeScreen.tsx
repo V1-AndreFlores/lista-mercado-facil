@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../../app/navigation/AppNavigator';
+import type { RootStackParamList } from '../../app/navigation/RootStackParamList';
 import { useAppDispatch } from '../../app/store/hooks';
 import { setSelectedMarketId } from '../../app/store/slices/marketSlice';
 import { setActiveList } from '../../app/store/slices/shoppingListSlice';
